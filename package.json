@@ -1,0 +1,14 @@
+{
+  "name": "latinsoft-pedidos",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prototipo funcional del MVP de LatinSoft Pedidos (app de mesero + panel administrativo) en un solo HTML autocontenido.",
+  "scripts": {
+    "test": "node tests/logic.test.js && node tests/e2e.test.js",
+    "test:logic": "node tests/logic.test.js",
+    "test:e2e": "node tests/e2e.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
