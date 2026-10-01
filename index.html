@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700;9..144,900&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/@zxing/library@0.23.0/umd/index.min.js"></script>
 <style>
 :root{
   box-sizing:border-box;
@@ -183,7 +184,14 @@ input,textarea,select{font-family:inherit;}
 .sticky-actions{position:sticky; bottom:0; background:linear-gradient(to top, var(--cream-050) 70%, transparent); padding-top:14px; display:flex; flex-direction:column; gap:8px;}
 
 /* Escáner overlay */
-.scanner-ov{position:absolute; inset:0; background:#0E0B09; color:#fff; display:flex; flex-direction:column; z-index:60;}
+.scanner-ov{position:fixed; inset:0; background:#0E0B09; color:#fff; display:flex; flex-direction:column; z-index:500;}
+.scanner-ov.hidden{display:none;}
+.scanner-video{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000;}
+.viewfinder{z-index:1;}
+.viewfinder .vf-corner, .viewfinder .vf-laser, .viewfinder .vf-hint{z-index:2;}
+.scanner-aviso{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 30px; font-size:13px; color:#E0D3BE; background:rgba(14,11,9,.85); z-index:3;}
+.torch-btn{position:absolute; top:10px; right:10px; z-index:4; width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,.3); background:rgba(0,0,0,.4); color:#fff; font-size:16px;}
+.torch-btn.on{background:var(--gold-500); color:#2A1D08; border-color:var(--gold-500);}
 .scanner-head{display:flex; justify-content:space-between; align-items:center; padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top,0px));}
 .scanner-head h3{margin:0; font-size:15px; font-weight:700;}
 .viewfinder{margin:4px 22px 14px; aspect-ratio:4/3; position:relative; border-radius:18px; background:#1B1512; overflow:hidden; display:flex; align-items:center; justify-content:center;}
@@ -399,6 +407,7 @@ table.data-table tr:last-child td{border-bottom:none;}
 
 <div id="toast-stack"></div>
 <div id="print-area"></div>
+<div id="scanner-persistente" class="scanner-ov hidden"></div>
 
 <script>
 (function(){
@@ -687,7 +696,7 @@ let ui = {
   errorConexion:null,
   mesero:{ logueado:null, pantalla:'mesas', mesaActiva:null, scannerAbierto:false,
            usuarioSel:null, pinInput:'', loginError:null, obsEditIndex:null, obsTexto:'',
-           confirmando:false, confirmInfo:null, detalleMiPedido:null, scanFlashId:null,
+           confirmando:false, confirmInfo:null, detalleMiPedido:null,
            turnoInicio:null },
   admin:{ pantalla:'dashboard', filtroMesero:'todos', detalle:null, mesaInfo:null,
           facturaMesa:null, pagoFormaSel:null, productoEditPrecio:null, productoCrear:false,
@@ -852,6 +861,7 @@ function render(){
   renderMesero();
   renderAdmin();
   renderToasts();
+  sincronizarScanner();
   guardar();
 }
 
@@ -903,7 +913,6 @@ function renderMesero(){
   else contenido=pantallaMesas(mesero);
 
   let overlay='';
-  if(m.scannerAbierto) overlay=pantallaScanner();
   if(m.confirmando) overlay=pantallaConfirmacion();
 
   if(m.detalleMiPedido) modal=modalDetalleMiPedido();
@@ -1068,16 +1077,26 @@ function pantallaPedido(mesero){
   );
 }
 
-function pantallaScanner(){
+/* ============================================================
+   ESCÁNER DE CÓDIGOS DE BARRAS (cámara real)
+   ------------------------------------------------------------
+   Este bloque de markup se crea UNA sola vez cuando se abre el
+   escáner y se destruye al cerrarlo — a propósito NO se vuelve a
+   regenerar en cada render() mientras está abierto, porque eso
+   destruiría el <video> y cortaría la cámara. Los cambios
+   mientras está abierto (el contador del carrito, el flash de
+   "leído") se actualizan con manipulación directa del DOM, no
+   con innerHTML.
+   ============================================================ */
+function contenidoScannerHTML(){
   const cats=state.categorias;
   let grid='';
   cats.forEach(function(cat){
     const prods=state.productos.filter(function(p){return p.idCategoria===cat.id;});
     grid += '<div class="scan-cat">'+esc(cat.nombre)+'</div><div class="scan-grid">'+
       prods.map(function(p){
-        const added = ui.mesero.scanFlashId===p.id;
         const inactivo = p.estado!=='activo';
-        return '<button class="scan-card'+(added?' added':'')+'" data-action="scan-producto" data-arg="'+p.id+'" '+(inactivo?'disabled':'')+'>'+
+        return '<button class="scan-card" data-action="scan-producto" data-arg="'+p.id+'" '+(inactivo?'disabled':'')+'>'+
           '<div class="nm">'+esc(p.nombre)+(inactivo?' <span style="color:var(--rojo-600)">· no disp.</span>':'')+'</div>'+
           '<div class="pr">'+money(p.precio)+'</div>'+
           '<div class="cd">#'+p.codigo+'</div>'+
@@ -1085,22 +1104,186 @@ function pantallaScanner(){
       }).join('') + '</div>';
   });
 
-  const flash = ui.mesero.scanFlashId ? '<div class="vf-flash on"></div>' : '<div class="vf-flash"></div>';
+  const carrito=state.carritos[ui.mesero.mesaActiva];
+  const nCarrito = carrito ? carrito.items.reduce(function(a,it){return a+it.cantidad;},0) : 0;
 
   return (
-    '<div class="scanner-ov">'+
-      '<div class="scanner-head"><h3>Escanear menú</h3><button class="btn btn-ghost btn-sm" data-action="cerrar-scanner">Terminar</button></div>'+
-      '<div class="viewfinder">'+
-        '<div class="vf-corner vf-tl"></div><div class="vf-corner vf-tr"></div><div class="vf-corner vf-bl"></div><div class="vf-corner vf-br"></div>'+
-        '<div class="vf-laser"></div>'+
-        flash+
-        '<span class="vf-hint">Toca un producto para simular la lectura del código</span>'+
-      '</div>'+
-      '<div class="scan-manual"><input type="text" id="scan-manual-input" placeholder="Ingresar código manual" inputmode="numeric"><button class="btn btn-gold btn-sm" data-action="scan-manual-submit">Buscar</button></div>'+
-      '<div class="scan-list">'+grid+'</div>'+
-      '<div class="scan-footer"><span class="mut" style="color:var(--ink-500); font-size:12px;">'+(state.carritos[ui.mesero.mesaActiva]?state.carritos[ui.mesero.mesaActiva].items.reduce(function(a,it){return a+it.cantidad;},0):0)+' producto(s) en el carrito</span><button class="btn btn-ember btn-sm" data-action="cerrar-scanner">Listo ✓</button></div>'+
-    '</div>'
+    '<div class="scanner-head"><h3>Escanear menú</h3><button class="btn btn-ghost btn-sm" data-action="cerrar-scanner">Terminar</button></div>'+
+    '<div class="viewfinder">'+
+      '<video id="scanner-video" class="scanner-video" playsinline muted autoplay></video>'+
+      '<div class="vf-corner vf-tl"></div><div class="vf-corner vf-tr"></div><div class="vf-corner vf-bl"></div><div class="vf-corner vf-br"></div>'+
+      '<div class="vf-laser"></div>'+
+      '<div class="vf-flash" id="scanner-flash"></div>'+
+      '<span class="vf-hint" id="scanner-hint">Iniciando cámara…</span>'+
+      '<button class="torch-btn" id="scanner-torch-btn" data-action="scanner-toggle-torch" style="display:none">🔦</button>'+
+      '<div class="scanner-aviso" id="scanner-aviso" style="display:none"></div>'+
+    '</div>'+
+    '<div class="scan-manual"><input type="text" id="scan-manual-input" placeholder="Ingresar código manual" inputmode="numeric"><button class="btn btn-gold btn-sm" data-action="scan-manual-submit">Buscar</button></div>'+
+    '<div class="scan-list">'+grid+'</div>'+
+    '<div class="scan-footer"><span class="mut" id="scanner-contador" style="color:var(--ink-500); font-size:12px;">'+nCarrito+' producto(s) en el carrito</span><button class="btn btn-ember btn-sm" data-action="cerrar-scanner">Listo ✓</button></div>'
   );
+}
+
+function scannerDebeMostrarse(){
+  return ui.vista==='mesero' && !!ui.mesero.logueado && !!ui.mesero.mesaActiva && !!ui.mesero.scannerAbierto;
+}
+
+function actualizarContadorScanner(){
+  const el=document.getElementById('scanner-contador');
+  if(!el) return;
+  const carrito=state.carritos[ui.mesero.mesaActiva];
+  const n = carrito ? carrito.items.reduce(function(a,it){return a+it.cantidad;},0) : 0;
+  el.textContent = n+' producto(s) en el carrito';
+}
+
+function flashScannerVisual(){
+  const el=document.getElementById('scanner-flash');
+  if(!el) return;
+  el.classList.add('on');
+  setTimeout(function(){ el.classList.remove('on'); }, 320);
+}
+
+function mostrarAvisoScanner(texto){
+  const el=document.getElementById('scanner-aviso');
+  const hint=document.getElementById('scanner-hint');
+  if(el){ el.textContent=texto; el.style.display='flex'; }
+  if(hint) hint.style.display='none';
+}
+function ocultarAvisoScanner(){
+  const el=document.getElementById('scanner-aviso');
+  const hint=document.getElementById('scanner-hint');
+  if(el) el.style.display='none';
+  if(hint){ hint.style.display=''; hint.textContent='Apunta al código de barras'; }
+}
+
+/* ---------- ciclo de vida de la cámara ---------- */
+let camaraStream=null, camaraIniciando=false, deteccionActiva=false, zxingControls=null, torchActivo=false;
+let ultimoCodigoLeido=null, ultimoCodigoLeidoEn=0;
+
+function detenerCamara(){
+  deteccionActiva=false;
+  torchActivo=false;
+  if(zxingControls){ try{ zxingControls.stop(); }catch(e){} zxingControls=null; }
+  if(camaraStream){ try{ camaraStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} camaraStream=null; }
+}
+
+async function iniciarCamara(){
+  if(camaraIniciando) return;
+  camaraIniciando=true;
+  ocultarAvisoScanner();
+  try{
+    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      mostrarAvisoScanner('Este navegador no permite usar la cámara aquí. Usa el código manual o toca el producto en la lista.');
+      camaraIniciando=false; return;
+    }
+    camaraStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
+    const video=document.getElementById('scanner-video');
+    if(!video){ detenerCamara(); camaraIniciando=false; return; } // el usuario cerró el escáner justo mientras cargaba
+    video.srcObject=camaraStream;
+    try{ await video.play(); }catch(e){}
+    configurarLinterna();
+    if(window.BarcodeDetector){ iniciarDeteccionNativa(); }
+    else if(window.ZXing){ iniciarDeteccionZXing(); }
+    else { mostrarAvisoScanner('Tu navegador no trae lector de códigos. Usa el código manual o toca el producto en la lista.'); }
+  }catch(err){
+    mostrarAvisoScanner('No se pudo usar la cámara (¿diste permiso?). Usa el código manual o toca el producto en la lista.');
+  }
+  camaraIniciando=false;
+}
+
+function configurarLinterna(){
+  const btn=document.getElementById('scanner-torch-btn');
+  if(!btn || !camaraStream) return;
+  const track=camaraStream.getVideoTracks()[0];
+  if(!track || typeof track.getCapabilities!=='function') return;
+  let caps={};
+  try{ caps=track.getCapabilities(); }catch(e){ return; }
+  if(caps && caps.torch) btn.style.display='flex';
+}
+
+async function alternarLinterna(){
+  if(!camaraStream) return;
+  const track=camaraStream.getVideoTracks()[0];
+  if(!track) return;
+  try{
+    torchActivo=!torchActivo;
+    await track.applyConstraints({ advanced:[{ torch:torchActivo }] });
+    const btn=document.getElementById('scanner-torch-btn');
+    if(btn) btn.classList.toggle('on', torchActivo);
+  }catch(e){ torchActivo=!torchActivo; /* no se pudo, revertimos el estado */ }
+}
+
+function iniciarDeteccionNativa(){
+  deteccionActiva=true;
+  const detector=new window.BarcodeDetector({ formats:['code_128'] });
+  async function loop(){
+    if(!deteccionActiva) return;
+    const video=document.getElementById('scanner-video');
+    if(video && video.readyState>=2){
+      try{
+        const codigos=await detector.detect(video);
+        if(codigos && codigos.length>0) manejarCodigoLeido(codigos[0].rawValue);
+      }catch(e){}
+    }
+    if(deteccionActiva) requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+}
+
+function iniciarDeteccionZXing(){
+  deteccionActiva=true;
+  try{
+    const hints=new Map();
+    hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [window.ZXing.BarcodeFormat.CODE_128]);
+    const reader=new window.ZXing.BrowserMultiFormatReader(hints);
+    reader.decodeFromVideoDevice(null, 'scanner-video', function(result){
+      if(result) manejarCodigoLeido(result.getText());
+    }).then(function(controls){ zxingControls=controls; }).catch(function(){
+      mostrarAvisoScanner('No se pudo iniciar el lector de códigos.');
+    });
+  }catch(e){
+    mostrarAvisoScanner('No se pudo iniciar el lector de códigos.');
+  }
+}
+
+function manejarCodigoLeido(codigo){
+  if(!codigo || !scannerDebeMostrarse()) return;
+  const ahora=Date.now();
+  // el mismo código leído dos veces en menos de 1.5s se ignora (evita dobles lecturas)
+  if(codigo===ultimoCodigoLeido && (ahora-ultimoCodigoLeidoEn)<1500) return;
+  ultimoCodigoLeido=codigo; ultimoCodigoLeidoEn=ahora;
+
+  const m=ui.mesero;
+  const producto=state.productos.find(function(p){ return p.codigo===codigo; });
+  if(!producto){ vibrar(80); pushToast('❌ Producto no encontrado','Código: '+codigo); return; }
+  const r=agregarProductoAlCarrito(state, m.mesaActiva, m.logueado, producto.id);
+  if(r.ok){
+    vibrar(30);
+    flashScannerVisual();
+    actualizarContadorScanner();
+    pushToast('✅ Agregado', producto.nombre+' · '+money(producto.precio));
+    guardar();
+  } else if(r.motivo==='inactivo'){
+    pushToast('⚠️ No disponible','Este producto está inactivo en este momento.');
+  }
+}
+
+/* ---------- mostrar/ocultar el escáner (vive fuera de renderMesero) ---------- */
+function sincronizarScanner(){
+  const el=document.getElementById('scanner-persistente');
+  if(!el) return;
+  const debeMostrar=scannerDebeMostrarse();
+  const estaMostrado=!el.classList.contains('hidden');
+  if(debeMostrar && !estaMostrado){
+    el.classList.remove('hidden');
+    el.innerHTML=contenidoScannerHTML();
+    iniciarCamara();
+  } else if(!debeMostrar && estaMostrado){
+    detenerCamara();
+    el.classList.add('hidden');
+    el.innerHTML='';
+  }
+  // si ya estaba mostrado y sigue mostrado, no tocamos el innerHTML: ahí vive la cámara activa.
 }
 
 function pantallaConfirmacion(){
@@ -1840,31 +2023,37 @@ async function manejarAccion(actionEl){
 
     /* ---- escáner ---- */
     case 'abrir-scanner': m.scannerAbierto=true; break;
-    case 'cerrar-scanner': m.scannerAbierto=false; m.scanFlashId=null; break;
+    case 'cerrar-scanner': m.scannerAbierto=false; break;
+    case 'scanner-toggle-torch': alternarLinterna(); return; // no toca el resto del render
     case 'scan-producto': {
+      // Toque manual sobre la lista (respaldo si la cámara no lee o no hay permiso).
+      // No usa manejarCodigoLeido() porque aquí ya sabemos el producto exacto (por
+      // id, no por código leído) y no aplica el debounce de 1.5s de la cámara.
       const r=agregarProductoAlCarrito(state,m.mesaActiva,m.logueado,arg);
       if(r.ok){
         const prod=getProducto(state,arg);
         vibrar(30);
-        m.scanFlashId=arg;
-        renderMesero();
-        setTimeout(function(){ m.scanFlashId=null; renderMesero(); },280);
+        flashScannerVisual();
+        actualizarContadorScanner();
         pushToast('✅ Agregado', prod.nombre+' · '+money(prod.precio));
       } else if(r.motivo==='inactivo'){
         pushToast('⚠️ No disponible','Este producto está inactivo en este momento.');
       } else {
         pushToast('❌ Producto no encontrado','Verifica el código e intenta de nuevo.');
       }
-      break;
+      guardar(); // el carrito cambió aunque no re-renderizamos todo
+      return;
     }
     case 'scan-manual-submit': {
       const input=document.getElementById('scan-manual-input');
       const codigo=input?input.value.trim():'';
+      if(!codigo) return;
       const prod=state.productos.find(function(p){return p.codigo===codigo;});
-      if(!prod){ pushToast('❌ Producto no encontrado','No existe un producto con ese código.'); break; }
+      if(!prod){ pushToast('❌ Producto no encontrado','No existe un producto con ese código.'); return; }
       const r=agregarProductoAlCarrito(state,m.mesaActiva,m.logueado,prod.id);
-      if(r.ok){ vibrar(30); pushToast('✅ Agregado', prod.nombre+' · '+money(prod.precio)); }
-      break;
+      if(r.ok){ vibrar(30); flashScannerVisual(); actualizarContadorScanner(); pushToast('✅ Agregado', prod.nombre+' · '+money(prod.precio)); if(input) input.value=''; guardar(); }
+      else if(r.motivo==='inactivo'){ pushToast('⚠️ No disponible','Este producto está inactivo en este momento.'); }
+      return;
     }
 
     /* ---- carrito ---- */
