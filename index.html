@@ -255,6 +255,8 @@ input,textarea,select{font-family:inherit;}
 .side-nav button.active{background:var(--ember-500); color:#fff;}
 .side-nav button:not(.active):hover{background:var(--char-700); color:#F0E6D4;}
 .side-foot{margin-top:auto; padding:10px 8px 0; font-size:11px; color:#A9977F; border-top:1px solid var(--char-600); padding-top:12px;}
+.side-foot .foot-texto{display:block; margin-bottom:8px;}
+.side-foot .btn{width:100%;}
 
 .admin-main{flex:1; min-width:0; padding:22px 26px 36px; overflow-y:auto; max-height:720px;}
 .admin-topline{display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:18px; gap:12px; flex-wrap:wrap;}
@@ -371,7 +373,9 @@ table.data-table tr:last-child td{border-bottom:none;}
   .admin-side{width:100%; flex-direction:row; align-items:center; overflow-x:auto; padding:10px 12px;}
   .side-brand{padding:0 12px 0 0;}
   .side-nav{flex-direction:row;}
-  .side-foot{display:none;}
+  .side-foot{display:flex; align-items:center; margin:0 0 0 8px; padding:0; border-top:none; white-space:nowrap; flex-shrink:0;}
+  .side-foot .foot-texto{display:none;}
+  .side-foot .btn{width:auto;}
   .stat-row{grid-template-columns:repeat(2,1fr);}
   .kanban{grid-template-columns:1fr; }
   .mesas-admin-grid{grid-template-columns:repeat(4,1fr);}
@@ -1488,7 +1492,7 @@ function renderAdmin(){
       '<div class="admin-side">'+
         '<div class="side-brand"><div class="em">🔥</div><div><div class="nm">'+esc(state.restaurante.nombre)+'</div><div class="sub">LatinSoft Pedidos</div></div></div>'+
         '<div class="side-nav">'+nav+'</div>'+
-        '<div class="side-foot">'+esc(quienEstaDentro.nombre)+' · '+fechaHoy()+'<br><button class="btn btn-ghost btn-sm" style="margin-top:8px; width:100%;" data-action="admin-logout">Cerrar sesión</button></div>'+
+        '<div class="side-foot"><span class="foot-texto">'+esc(quienEstaDentro.nombre)+' · '+fechaHoy()+'</span><button class="btn btn-ghost btn-sm" data-action="admin-logout">🔒 Cerrar sesión</button></div>'+
       '</div>'+
       '<div class="admin-main">'+contenido+'</div>'+
     '</div>'+
