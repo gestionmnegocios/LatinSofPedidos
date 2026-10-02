@@ -1563,9 +1563,13 @@ function statCards(){
 }
 
 function todasLasRondasAbiertas(){
+  // Solo pedidos que todavía no se pagaron: una vez pagado, su historia
+  // sigue disponible en Ventas del día, pero ya no ocupa espacio en el
+  // tablero en vivo (si no, "Entregado" crecería sin parar durante el día).
   const out=[];
   Object.keys(state.pedidos).forEach(function(id){
     const p=state.pedidos[id];
+    if(p.estadoCuenta==='pagado') return;
     p.rondas.forEach(function(r){
       if(r.estado!=='anulado') out.push({pedido:p,ronda:r});
     });
