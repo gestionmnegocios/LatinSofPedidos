@@ -351,6 +351,8 @@ table.data-table tr:last-child td{border-bottom:none;}
 .empty-state{text-align:center; padding:50px 20px; color:var(--ink-500);}
 .empty-state .big{font-size:36px; margin-bottom:10px;}
 
+.admin-login-shell{min-height:640px; display:flex; align-items:center; justify-content:center; background:var(--char-800); border-radius:var(--radius-l); padding:40px 20px;}
+.admin-login-card{background:var(--cream-050); color:var(--ink-900); border-radius:var(--radius-l); padding:10px 20px 20px; max-width:340px; width:100%; box-shadow:var(--shadow-card);}
 .boot-screen{min-height:60vh; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:10px; padding:40px 20px; color:var(--cream-100);}
 .boot-screen .spin{width:30px; height:30px; border-radius:50%; border:3px solid var(--char-600); border-top-color:var(--ember-500); animation:spin 0.8s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg);}}
@@ -434,7 +436,7 @@ function mapRestaurante(r){
   return { nombre:r.nombre, nit:r.nit, direccion:r.direccion, porcentajeServicio:r.porcentaje_servicio, pieComprobante:r.pie_comprobante };
 }
 function mapProducto(p){ return { id:p.id, codigo:p.codigo, nombre:p.nombre, idCategoria:p.categoria_id, precio:Number(p.precio), estado:p.estado }; }
-function mapMesero(m){ return { id:m.id, nombre:m.nombre, usuario:m.usuario, pin:m.pin, estado:m.estado, ultimoIngreso: m.ultimo_ingreso ? new Date(m.ultimo_ingreso).getTime() : null }; }
+function mapMesero(m){ return { id:m.id, nombre:m.nombre, usuario:m.usuario, pin:m.pin, estado:m.estado, ultimoIngreso: m.ultimo_ingreso ? new Date(m.ultimo_ingreso).getTime() : null, rol: m.rol||'mesero' }; }
 function mapMesa(m){ return { id:m.id, numero:m.numero, idPedidoActivo:m.pedido_activo_id }; }
 function mapPago(p){ return { id:p.id, formaPago:p.forma_pago, valor:Number(p.valor), recibido: p.recibido!=null?Number(p.recibido):null, hora:new Date(p.hora).getTime() }; }
 function mapRonda(r){
@@ -668,7 +670,7 @@ async function toggleEstadoProducto(idProducto,nuevoEstadoValor){
 async function crearMesero({nombre,usuario}){
   const pin=String(Math.floor(1000+Math.random()*9000));
   const id='u-'+Date.now();
-  const {error}=await sb.from('meseros').insert({id, restaurante_id:RESTAURANTE_ID, nombre, usuario, pin, estado:'activo'});
+  const {error}=await sb.from('meseros').insert({id, restaurante_id:RESTAURANTE_ID, nombre, usuario, pin, estado:'activo', rol:'mesero'});
   return error ? {ok:false,error} : {ok:true, pin};
 }
 async function resetearPinMesero(idMesero){
@@ -698,7 +700,8 @@ let ui = {
            usuarioSel:null, pinInput:'', loginError:null, obsEditIndex:null, obsTexto:'',
            confirmando:false, confirmInfo:null, detalleMiPedido:null,
            turnoInicio:null },
-  admin:{ pantalla:'dashboard', filtroMesero:'todos', detalle:null, mesaInfo:null,
+  admin:{ logueado:null, usuarioSel:null, pinInput:'', loginError:null,
+          pantalla:'dashboard', filtroMesero:'todos', detalle:null, mesaInfo:null,
           facturaMesa:null, pagoFormaSel:null, productoEditPrecio:null, productoCrear:false,
           meseroCrear:false, meseroEditId:null, anularInfo:null, comprobante:null,
           productosBusqueda:'', mesesBusqueda:'' },
@@ -713,7 +716,7 @@ let toastSeq = 0;
 // enviar (para no perder un pedido a medio armar si se recarga).
 function guardar(){
   try{
-    localStorage.setItem('latinsoft_pedidos_ui_v1', JSON.stringify({vista:ui.vista, mesero:{logueado:ui.mesero.logueado, pantalla:ui.mesero.pantalla, turnoInicio:ui.mesero.turnoInicio}, admin:{pantalla:ui.admin.pantalla}}));
+    localStorage.setItem('latinsoft_pedidos_ui_v1', JSON.stringify({vista:ui.vista, mesero:{logueado:ui.mesero.logueado, pantalla:ui.mesero.pantalla, turnoInicio:ui.mesero.turnoInicio}, admin:{logueado:ui.admin.logueado, pantalla:ui.admin.pantalla}}));
     localStorage.setItem('latinsoft_pedidos_carritos_v1', JSON.stringify(state.carritos));
   }catch(e){ /* almacenamiento no disponible: la app sigue funcionando igual */ }
 }
@@ -726,6 +729,7 @@ function cargar(){
       ui.mesero.logueado=uParsed.mesero&&uParsed.mesero.logueado||null;
       ui.mesero.pantalla=(uParsed.mesero&&uParsed.mesero.pantalla)||'mesas';
       ui.mesero.turnoInicio=uParsed.mesero&&uParsed.mesero.turnoInicio||null;
+      ui.admin.logueado=uParsed.admin&&uParsed.admin.logueado||null;
       ui.admin.pantalla=(uParsed.admin&&uParsed.admin.pantalla)||'dashboard';
     }
     const cRaw=localStorage.getItem('latinsoft_pedidos_carritos_v1');
@@ -950,7 +954,7 @@ function phoneFrame(inner){
 
 function pantallaLogin(){
   const m=ui.mesero;
-  const activos=state.meseros.filter(function(x){return x.estado==='activo';});
+  const activos=state.meseros.filter(function(x){return x.estado==='activo' && (x.rol||'mesero')==='mesero';});
   const chips = activos.map(function(u){
     return '<button class="user-chip'+(m.usuarioSel===u.id?' active':'')+'" data-action="login-usuario-select" data-arg="'+u.id+'">'+esc(u.nombre.split(' ')[0])+'</button>';
   }).join('');
@@ -1418,9 +1422,48 @@ function modalConfirmarEnvio(){
 /* ============================================================
    8) RENDER — PANEL ADMINISTRATIVO
    ============================================================ */
+function pantallaLoginAdmin(){
+  const a=ui.admin;
+  const activos=state.meseros.filter(function(x){return x.estado==='activo' && (x.rol||'mesero')==='admin';});
+  const chips = activos.map(function(u){
+    return '<button class="user-chip'+(a.usuarioSel===u.id?' active':'')+'" data-action="admin-login-usuario-select" data-arg="'+u.id+'">'+esc(u.nombre.split(' ')[0])+'</button>';
+  }).join('');
+  const dots=[0,1,2,3].map(function(i){ return '<span class="pin-dot'+(i<a.pinInput.length?' filled':'')+'"></span>'; }).join('');
+  const keys=['1','2','3','4','5','6','7','8','9','','0','⌫'];
+  const keypad = keys.map(function(k){
+    if(k==='') return '<span></span>';
+    if(k==='⌫') return '<button class="key wide" data-action="admin-login-pin-borrar">Borrar</button>';
+    return '<button class="key" data-action="admin-login-pin-digit" data-arg="'+k+'">'+k+'</button>';
+  }).join('');
+
+  return (
+    '<div class="admin-login-shell"><div class="admin-login-card"><div class="login-wrap" style="padding-top:10px;">'+
+      '<div class="login-logo">🔥</div>'+
+      '<h1>'+esc(state.restaurante?state.restaurante.nombre:'')+'</h1>'+
+      '<div class="sub">LatinSoft Pedidos · Ingreso de administración</div>'+
+      '<div class="user-pick">'+(chips||'<span class="mut" style="font-size:12px;color:var(--ink-500);max-width:220px;">No hay cuentas de administración activas. Créala en Supabase con rol = \'admin\'.</span>')+'</div>'+
+      '<div class="pin-dots">'+dots+'</div>'+
+      (a.loginError?'<div class="pin-error">'+esc(a.loginError)+'</div>':'')+
+      '<div class="keypad">'+keypad+'</div>'+
+    '</div></div></div>'
+  );
+}
+
 function renderAdmin(){
   const root=document.getElementById('vista-admin');
   const a=ui.admin;
+
+  if(!a.logueado){
+    root.innerHTML = pantallaLoginAdmin();
+    return;
+  }
+  const quienEstaDentro=getMesero(state,a.logueado);
+  if(!quienEstaDentro || quienEstaDentro.estado!=='activo'){
+    // la cuenta fue desactivada desde otro dispositivo mientras tenía la sesión abierta
+    a.logueado=null;
+    root.innerHTML = pantallaLoginAdmin();
+    return;
+  }
 
   const navItems=[
     ['dashboard','📊','Dashboard'], ['pedidos','🧾','Pedidos'], ['mesas','🍽️','Mesas'],
@@ -1445,7 +1488,7 @@ function renderAdmin(){
       '<div class="admin-side">'+
         '<div class="side-brand"><div class="em">🔥</div><div><div class="nm">'+esc(state.restaurante.nombre)+'</div><div class="sub">LatinSoft Pedidos</div></div></div>'+
         '<div class="side-nav">'+nav+'</div>'+
-        '<div class="side-foot">Caja · Administrador<br>'+fechaHoy()+'</div>'+
+        '<div class="side-foot">'+esc(quienEstaDentro.nombre)+' · '+fechaHoy()+'<br><button class="btn btn-ghost btn-sm" style="margin-top:8px; width:100%;" data-action="admin-logout">Cerrar sesión</button></div>'+
       '</div>'+
       '<div class="admin-main">'+contenido+'</div>'+
     '</div>'+
@@ -1825,7 +1868,8 @@ function modalProductoCrear(){
 
 /* ---------- Meseros ---------- */
 function adminMeseros(){
-  const rows=state.meseros.map(function(m){
+  const soloMeseros=state.meseros.filter(function(m){return (m.rol||'mesero')==='mesero';});
+  const rows=soloMeseros.map(function(m){
     return (
       '<tr>'+
         '<td>'+esc(m.nombre)+'</td>'+
@@ -1840,7 +1884,7 @@ function adminMeseros(){
     );
   }).join('');
   return (
-    '<div class="admin-topline"><div><h2>Meseros</h2><div class="mut">'+state.meseros.length+' meseros registrados</div></div>'+
+    '<div class="admin-topline"><div><h2>Meseros</h2><div class="mut">'+soloMeseros.length+' meseros registrados</div></div>'+
       '<button class="btn btn-ember btn-sm" data-action="mesero-crear-abrir">+ Nuevo mesero</button></div>'+
     '<table class="data-table"><thead><tr><th>Nombre</th><th>Usuario</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
   );
@@ -1991,6 +2035,24 @@ async function intentarLogin(){
   marcarUltimoIngreso(usr.id); // no bloquea el login si tarda o falla
 }
 
+async function intentarLoginAdmin(){
+  const a=ui.admin;
+  const usr=getMesero(state,a.usuarioSel);
+  if(!usr){ a.loginError='Selecciona tu usuario.'; return; }
+  if(usr.estado!=='activo'){ a.loginError='Usuario desactivado.'; return; }
+  if(a.pinInput.length<4) return;
+  if(usr.pin!==a.pinInput){
+    a.loginError='PIN incorrecto. Intenta de nuevo.';
+    a.pinInput='';
+    return;
+  }
+  a.logueado=usr.id;
+  a.pinInput='';
+  a.loginError=null;
+  pushToast('👋 Bienvenido', usr.nombre+' inició sesión.');
+  marcarUltimoIngreso(usr.id);
+}
+
 async function manejarAccion(actionEl){
   const action=actionEl.getAttribute('data-action');
   const arg=actionEl.getAttribute('data-arg');
@@ -2009,6 +2071,15 @@ async function manejarAccion(actionEl){
       if(m.pinInput.length===4) await intentarLogin();
       break;
     case 'login-pin-borrar': m.pinInput=m.pinInput.slice(0,-1); m.loginError=null; break;
+
+    /* ---- login admin ---- */
+    case 'admin-login-usuario-select': a.usuarioSel=arg; a.loginError=null; break;
+    case 'admin-login-pin-digit':
+      if(a.pinInput.length<4) a.pinInput+=arg;
+      if(a.pinInput.length===4) await intentarLoginAdmin();
+      break;
+    case 'admin-login-pin-borrar': a.pinInput=a.pinInput.slice(0,-1); a.loginError=null; break;
+    case 'admin-logout': a.logueado=null; a.usuarioSel=null; a.pantalla='dashboard'; break;
 
     /* ---- navegación mesero ---- */
     case 'mesero-tab':
@@ -2135,7 +2206,7 @@ async function manejarAccion(actionEl){
       const ronda=pedido.rondas.find(function(r){return r.id===p[1];});
       const sig=siguienteEstadoRonda(ronda.estado);
       if(sig){
-        const r = await cambiarEstadoRonda(state,p[0],p[1],sig,'u-admin');
+        const r = await cambiarEstadoRonda(state,p[0],p[1],sig,a.logueado);
         if(r.ok){
           necesitaResync=true;
           if(sig==='listo'){
@@ -2154,7 +2225,7 @@ async function manejarAccion(actionEl){
     case 'ronda-anular-confirmar': {
       const motivoEl=document.getElementById('anular-motivo-input');
       const motivo=motivoEl&&motivoEl.value.trim()?motivoEl.value.trim():'Sin motivo especificado';
-      const r = await anularRonda(state,a.anularInfo.idPedido,a.anularInfo.idRonda,motivo,'u-admin');
+      const r = await anularRonda(state,a.anularInfo.idPedido,a.anularInfo.idRonda,motivo,a.logueado);
       a.anularInfo=null;
       if(r.ok){ necesitaResync=true; pushToast('🚫 Ronda anulada', motivo); }
       else pushToast('⚠️ No se pudo anular','Revisa tu conexión e intenta de nuevo.');
@@ -2221,7 +2292,7 @@ async function manejarAccion(actionEl){
         await reiniciarPagosPedido(pedido.id);
         await registrarPago(state,pedido.id,{formaPago:'efectivo', valor:tot.total, recibido:recibido});
       }
-      const res = await cobrarPedido(state,pedido.id,'u-admin');
+      const res = await cobrarPedido(state,pedido.id,a.logueado);
       if(res.ok){
         necesitaResync=true;
         pushToast('✅ Cobrado', pedido.id+' · '+money(tot.total));
