@@ -1586,7 +1586,8 @@ function adminDashboard(){
     {key:'entregado', label:'Entregado', match:function(e){return e.ronda.estado==='entregado';}},
   ];
 
-  const filtroChips = ['todos'].concat(state.meseros.map(function(m){return m.id;})).map(function(id){
+  const soloMeserosDash = state.meseros.filter(function(m){return (m.rol||'mesero')==='mesero';});
+  const filtroChips = ['todos'].concat(soloMeserosDash.map(function(m){return m.id;})).map(function(id){
     const label = id==='todos'?'Todos':getMesero(state,id).nombre.split(' ')[0];
     return '<button class="chip-filtro'+(a.filtroMesero===id?' active':'')+'" data-action="admin-filtro-mesero" data-arg="'+id+'">'+label+'</button>';
   }).join('');
