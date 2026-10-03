@@ -2058,7 +2058,10 @@ function modalComprobante(){
 
 function imprimir(html){
   const area=document.getElementById('print-area');
-  area.innerHTML=html;
+  // Unas líneas en blanco al final: con un driver genérico (sin corte ni
+  // avance automático), esto hace que salga más papel solo y haya que
+  // halar menos para separar el recibo.
+  area.innerHTML=html+'<div style="height:60px;">&nbsp;</div>';
   setTimeout(function(){ window.print(); }, 60);
 }
 
