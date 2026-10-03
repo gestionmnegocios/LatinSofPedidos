@@ -378,7 +378,6 @@ table.data-table tbody tr:hover{background:var(--cream-050);}
 
 .comprobante-paper{background:#fff; border:1px solid var(--cream-200); border-radius:var(--radius-m); padding:16px; font-family:'Courier New',monospace; font-size:11.5px; line-height:1.55; max-width:300px; margin:0 auto;}
 .comprobante-paper hr{border:none; border-top:1px dashed #999; margin:7px 0;}
-.comprobante-paper .cp-row{display:flex; justify-content:space-between;}
 .comprobante-paper .cp-center{text-align:center;}
 
 .empty-state{text-align:center; padding:50px 20px; color:var(--ink-500);}
@@ -1991,15 +1990,28 @@ function adminVentas(){
 }
 
 /* ---------- Comprobante ---------- */
+/* Fila de dos columnas (texto a la izquierda, texto a la derecha) para todo
+   lo que se imprime. Usa <table> real en vez de flexbox: el driver "Generic /
+   Text Only" de algunas impresoras térmicas no interpreta bien CSS moderno
+   como display:flex, pero cualquier impresora entiende una tabla de toda la
+   vida. */
+function cpRow(leftHtml,rightHtml,negrita){
+  if(negrita){ leftHtml='<b>'+leftHtml+'</b>'; rightHtml='<b>'+rightHtml+'</b>'; }
+  return '<tr><td style="text-align:left; padding:1px 6px 1px 0;">'+leftHtml+'</td><td style="text-align:right; padding:1px 0; white-space:nowrap;">'+rightHtml+'</td></tr>';
+}
+function cpTabla(filasHtml){
+  return '<table style="width:100%; border-collapse:collapse; font-family:inherit; font-size:inherit;">'+filasHtml+'</table>';
+}
+
 function construirComprobanteHtml(pedido){
   const mesa=getMesa(state,pedido.idMesa);
   const mesero=getMesero(state,pedido.meseroPrincipal);
   const tot=totalesPedido(pedido);
   const r=state.restaurante;
-  let lineas='';
+  let lineasFilas='';
   pedido.rondas.filter(function(rr){return rr.estado!=='anulado';}).forEach(function(ronda){
     ronda.items.forEach(function(it){
-      lineas += '<div class="cp-row"><span>'+it.cantidad+'x '+esc(it.nombre)+'</span><span>'+money(totalItem(it))+'</span></div>';
+      lineasFilas += cpRow(it.cantidad+'x '+esc(it.nombre), money(totalItem(it)));
     });
   });
   const pagosTxt = pedido.pagos.map(function(p){ return ({efectivo:'Efectivo',tarjeta:'Tarjeta',transferencia:'Transferencia'}[p.formaPago]||p.formaPago)+': '+money(p.valor); }).join(' · ');
@@ -2009,18 +2021,18 @@ function construirComprobanteHtml(pedido){
     '<div class="comprobante-paper">'+
       '<div class="cp-center"><b>'+esc(r.nombre)+'</b><br>NIT '+esc(r.nit)+'<br>'+esc(r.direccion)+'</div>'+
       '<hr>'+
-      '<div class="cp-row"><span>'+pedido.id+'</span><span>'+horaCorta(pedido.pagadoEn||Date.now())+'</span></div>'+
-      '<div class="cp-row"><span>Mesa '+mesa.numero+'</span><span>'+esc(mesero.nombre)+'</span></div>'+
+      cpTabla(cpRow(pedido.id, horaCorta(pedido.pagadoEn||Date.now())) + cpRow('Mesa '+mesa.numero, esc(mesero.nombre)))+
       '<hr>'+
-      lineas+
+      cpTabla(lineasFilas)+
       '<hr>'+
-      '<div class="cp-row"><span>Subtotal</span><span>'+money(tot.subtotal)+'</span></div>'+
-      '<div class="cp-row"><span>Servicio</span><span>'+money(tot.servicio)+'</span></div>'+
-      '<div class="cp-row"><span>Descuento</span><span>-'+money(tot.descuento)+'</span></div>'+
-      '<div class="cp-row"><b>TOTAL</b><b>'+money(tot.total)+'</b></div>'+
+      cpTabla(
+        cpRow('Subtotal', money(tot.subtotal))+
+        cpRow('Servicio', money(tot.servicio))+
+        cpRow('Descuento', '-'+money(tot.descuento))+
+        cpRow('TOTAL', money(tot.total), true)
+      )+
       '<hr>'+
-      '<div class="cp-row"><span>Pago</span><span>'+esc(pagosTxt)+'</span></div>'+
-      (cambio!=null?'<div class="cp-row"><span>Cambio</span><span>'+money(cambio)+'</span></div>':'')+
+      cpTabla(cpRow('Pago', esc(pagosTxt)) + (cambio!=null?cpRow('Cambio', money(cambio)):''))+
       '<hr><div class="cp-center">'+esc(r.pieComprobante)+'</div>'+
     '</div>'
   );
@@ -2274,8 +2286,9 @@ async function manejarAccion(actionEl){
     case 'comanda-imprimir': {
       const p=arg.split(','); const pedido=getPedido(state,p[0]); const ronda=pedido.rondas.find(function(r){return r.id===p[1];});
       const mesa=getMesa(state,pedido.idMesa); const mesero=getMesero(state,ronda.idMesero);
-      const items=ronda.items.map(function(it){ return '<div class="cp-row"><span>'+it.cantidad+'x '+esc(it.nombre)+(it.observacion?' — '+esc(it.observacion):'')+'</span></div>'; }).join('');
-      imprimir('<div class="comprobante-paper"><div class="cp-center"><b>COMANDA COCINA</b></div><hr><div class="cp-row"><span>'+pedido.id+' · R'+ronda.numero+'</span><span>'+horaCorta(ronda.enviadoEn)+'</span></div><div class="cp-row"><span>Mesa '+mesa.numero+'</span><span>'+esc(mesero.nombre)+'</span></div><hr>'+items+'</div>');
+      const items=ronda.items.map(function(it){ return '<div style="padding:2px 0;">'+it.cantidad+'x '+esc(it.nombre)+(it.observacion?' — '+esc(it.observacion):'')+'</div>'; }).join('');
+      const encabezadoComanda=cpTabla(cpRow(pedido.id+' · R'+ronda.numero, horaCorta(ronda.enviadoEn)) + cpRow('Mesa '+mesa.numero, esc(mesero.nombre)));
+      imprimir('<div class="comprobante-paper"><div class="cp-center"><b>COMANDA COCINA</b></div><hr>'+encabezadoComanda+'<hr>'+items+'</div>');
       break;
     }
 
@@ -2385,8 +2398,9 @@ async function manejarAccion(actionEl){
       break;
     }
     case 'productos-imprimir-codigos': {
+      const filasProductos = state.productos.map(function(p){ return cpRow(esc(p.nombre), '#'+p.codigo+' · '+money(p.precio)); }).join('');
       const html='<div class="comprobante-paper" style="max-width:420px"><div class="cp-center"><b>Etiquetas de código — '+esc(state.restaurante.nombre)+'</b></div><hr>'+
-        state.productos.map(function(p){ return '<div class="cp-row"><span>'+esc(p.nombre)+'</span><span>#'+p.codigo+' · '+money(p.precio)+'</span></div>'; }).join('')+
+        cpTabla(filasProductos)+
         '</div>';
       imprimir(html);
       break;
@@ -2431,9 +2445,10 @@ async function manejarAccion(actionEl){
     case 'ventas-imprimir-resumen': {
       const pagados=Object.keys(state.pedidos).map(function(id){return state.pedidos[id];}).filter(function(p){return p.estadoCuenta==='pagado';});
       const totalVendido=pagados.reduce(function(a2,p){return a2+totalesPedido(p).total;},0);
+      const filasVentas = pagados.map(function(p){ const mesa=getMesa(state,p.idMesa); return cpRow(p.id+' · Mesa '+mesa.numero, money(totalesPedido(p).total)); }).join('');
       const html='<div class="comprobante-paper"><div class="cp-center"><b>Ventas del día</b><br>'+esc(fechaHoy())+'</div><hr>'+
-        pagados.map(function(p){ const mesa=getMesa(state,p.idMesa); return '<div class="cp-row"><span>'+p.id+' · Mesa '+mesa.numero+'</span><span>'+money(totalesPedido(p).total)+'</span></div>'; }).join('')+
-        '<hr><div class="cp-row"><b>TOTAL</b><b>'+money(totalVendido)+'</b></div></div>';
+        cpTabla(filasVentas)+
+        '<hr>'+cpTabla(cpRow('TOTAL', money(totalVendido), true))+'</div>';
       imprimir(html);
       break;
     }
