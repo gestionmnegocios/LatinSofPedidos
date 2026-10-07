@@ -453,16 +453,31 @@ table.data-table tbody tr:hover{background:var(--cream-050);}
    1) CONEXIÓN A SUPABASE
    ============================================================ */
 // ⚠️ Reemplaza estos dos valores por los de tu proyecto de Supabase
-// (Project Settings → API → Project URL / anon public key).
+// (Project Settings → API → Project URL / publishable key).
+// La clave publicable es pública por diseño: sin sesión solo permite ver la
+// pantalla de login (opciones_login) y llamar a la función login-pin. Todo
+// lo demás exige la sesión que entrega login-pin tras un PIN correcto.
 const SUPABASE_URL = 'https://wcysnzxijlnszofsrvkl.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_FgSSYUmJbNjEGHIH4xpd3A_I3hm_2_9';
 const RESTAURANTE_ID = 'rest-fogon';
 
 const SUPABASE_CONFIGURADO = !SUPABASE_URL.includes('TU_SUPABASE') && !SUPABASE_ANON_KEY.includes('TU_SUPABASE');
-let sb = null;
+// Un cliente (y una sesión de Supabase Auth) por vista: en el mismo equipo
+// pueden estar abiertas a la vez la app del mesero y la de caja, cada una
+// con su propio usuario.
+const clientes = { mesero:null, admin:null };
 if (SUPABASE_CONFIGURADO && window.supabase && typeof window.supabase.createClient === 'function') {
-  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  ['mesero','admin'].forEach(function(vista){
+    clientes[vista] = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth:{ storageKey:'latinsoft-sesion-'+vista, persistSession:true, autoRefreshToken:true, detectSessionInUrl:false },
+    });
+  });
 }
+// Cliente con el que escriben las acciones; manejarAccion lo apunta al de
+// la vista donde se hizo el clic, antes de llamar a cualquier función de datos.
+let sb = clientes.mesero;
+// Columnas de meseros que puede leer la app (nunca el PIN).
+const COLUMNAS_MESEROS = 'id, restaurante_id, nombre, usuario, estado, ultimo_ingreso, rol';
 
 /* ---------- mapeo de filas de Supabase (snake_case) a los objetos que usa la UI (camelCase) ---------- */
 function mapRestaurante(r){
@@ -470,7 +485,7 @@ function mapRestaurante(r){
   return { nombre:r.nombre, nit:r.nit, direccion:r.direccion, porcentajeServicio:r.porcentaje_servicio, pieComprobante:r.pie_comprobante };
 }
 function mapProducto(p){ return { id:p.id, codigo:p.codigo, nombre:p.nombre, idCategoria:p.categoria_id, precio:Number(p.precio), estado:p.estado }; }
-function mapMesero(m){ return { id:m.id, nombre:m.nombre, usuario:m.usuario, pin:m.pin, estado:m.estado, ultimoIngreso: m.ultimo_ingreso ? new Date(m.ultimo_ingreso).getTime() : null, rol: m.rol||'mesero' }; }
+function mapMesero(m){ return { id:m.id, nombre:m.nombre, usuario:m.usuario, estado:m.estado, ultimoIngreso: m.ultimo_ingreso ? new Date(m.ultimo_ingreso).getTime() : null, rol: m.rol||'mesero' }; }
 function mapMesa(m){ return { id:m.id, numero:m.numero, idPedidoActivo:m.pedido_activo_id }; }
 function mapPago(p){ return { id:p.id, formaPago:p.forma_pago, valor:Number(p.valor), recibido: p.recibido!=null?Number(p.recibido):null, hora:new Date(p.hora).getTime() }; }
 function mapRonda(r){
@@ -490,19 +505,49 @@ function mapPedido(p){
 }
 
 /* ---------- carga inicial + resincronización (se llama al arrancar y cada vez que llega un cambio en tiempo real) ---------- */
+// Sin ninguna sesión abierta solo se carga lo que pide la pantalla de login
+// (nombre del restaurante y usuarios activos, sin PIN). Con sesión se carga
+// todo lo que las políticas RLS le dejan ver a ese usuario; si hay sesión en
+// las dos vistas se usa la de caja, que ve más (p. ej. los pagos).
+function vistaConSesion(){ return ui.admin.logueado ? 'admin' : (ui.mesero.logueado ? 'mesero' : null); }
+function esErrorDeSesion(error){ return !!error && /JWT|PGRST30\d/.test(String(error.code||'')+' '+String(error.message||'')); }
+
+async function cargarOpcionesLogin(){
+  const {data, error} = await clientes.mesero.rpc('opciones_login', {p_restaurante_id: RESTAURANTE_ID});
+  if(error) return {ok:false, motivo:'error_db', error};
+  state.restaurante = mapRestaurante(data && data.restaurante);
+  state.meseros = ((data && data.usuarios) || []).map(function(u){
+    return { id:u.id, nombre:u.nombre, usuario:'', estado:'activo', ultimoIngreso:null, rol:u.rol||'mesero' };
+  });
+  state.categorias = []; state.productos = []; state.mesas = []; state.pedidos = {};
+  return {ok:true};
+}
+
 async function syncFromSupabase(){
-  if(!sb) return {ok:false, motivo:'no_configurado'};
+  if(!clientes.mesero) return {ok:false, motivo:'no_configurado'};
+  const vista = vistaConSesion();
   try{
+    if(!vista) return await cargarOpcionesLogin();
+    const c = clientes[vista];
     const [rRestaurantes, rCategorias, rProductos, rMeseros, rMesas, rPedidos] = await Promise.all([
-      sb.from('restaurantes').select('*').eq('id', RESTAURANTE_ID).limit(1),
-      sb.from('categorias').select('*').eq('restaurante_id', RESTAURANTE_ID).order('orden'),
-      sb.from('productos').select('*').eq('restaurante_id', RESTAURANTE_ID),
-      sb.from('meseros').select('*').eq('restaurante_id', RESTAURANTE_ID),
-      sb.from('mesas').select('*').eq('restaurante_id', RESTAURANTE_ID).order('numero'),
-      sb.from('pedidos').select('*, rondas(*), pagos(*)').eq('restaurante_id', RESTAURANTE_ID),
+      c.from('restaurantes').select('*').eq('id', RESTAURANTE_ID).limit(1),
+      c.from('categorias').select('*').eq('restaurante_id', RESTAURANTE_ID).order('orden'),
+      c.from('productos').select('*').eq('restaurante_id', RESTAURANTE_ID),
+      c.from('meseros').select(COLUMNAS_MESEROS).eq('restaurante_id', RESTAURANTE_ID),
+      c.from('mesas').select('*').eq('restaurante_id', RESTAURANTE_ID).order('numero'),
+      c.from('pedidos').select('*, rondas(*), pagos(*)').eq('restaurante_id', RESTAURANTE_ID),
     ]);
     const primerError = [rRestaurantes, rCategorias, rProductos, rMeseros, rMesas, rPedidos].find(r=>r.error);
-    if(primerError) return {ok:false, motivo:'error_db', error:primerError.error};
+    if(primerError){
+      if(!esErrorDeSesion(primerError.error)) return {ok:false, motivo:'error_db', error:primerError.error};
+      await cerrarSesion(vista, 'Tu sesión venció. Ingresa de nuevo con tu PIN.');
+      return syncFromSupabase();
+    }
+    if(!rRestaurantes.data || rRestaurantes.data.length===0){
+      // la sesión es válida pero ya no da acceso: usuario desactivado o sin restaurante
+      await cerrarSesion(vista, 'Tu usuario fue desactivado o ya no tiene acceso.');
+      return syncFromSupabase();
+    }
 
     state.restaurante = mapRestaurante(rRestaurantes.data && rRestaurantes.data[0]);
     state.categorias = rCategorias.data || [];
@@ -529,14 +574,86 @@ function programarResync(){
     if(r.ok) render();
   }, 300);
 }
-function iniciarTiempoReal(){
-  if(!sb) return;
+// Cada sesión escucha con su propio token: Realtime aplica las mismas
+// políticas RLS, así que cada quien solo recibe cambios de su restaurante.
+const canales = { mesero:null, admin:null };
+function iniciarTiempoReal(vista){
+  const c = clientes[vista];
+  if(!c || canales[vista]) return;
   const tablas = ['mesas','pedidos','rondas','pagos','productos','meseros'];
-  const canal = sb.channel('latinsoft-sync');
+  const canal = c.channel('latinsoft-sync-'+vista);
   tablas.forEach(function(t){
     canal.on('postgres_changes', {event:'*', schema:'public', table:t}, programarResync);
   });
   canal.subscribe();
+  canales[vista] = canal;
+}
+function detenerTiempoReal(vista){
+  if(!canales[vista]) return;
+  try{ clientes[vista].removeChannel(canales[vista]); }catch(e){}
+  canales[vista] = null;
+}
+
+/* ---------- sesiones (login por PIN verificado en el servidor) ---------- */
+// El PIN viaja una sola vez a la Edge Function login-pin, que lo compara con
+// el hash guardado en la base (con bloqueo tras 5 intentos fallidos) y, si es
+// correcto, devuelve una sesión real de Supabase Auth para ese usuario.
+async function iniciarSesionConPin(vista, idUsuario, pin){
+  const c = clientes[vista];
+  try{
+    const {data, error} = await c.functions.invoke('login-pin', {
+      body:{ mesero_id:idUsuario, pin:pin, rol: vista==='admin' ? 'admin' : 'mesero' },
+    });
+    if(error || !data) return {ok:false, motivo:'error_red'};
+    if(!data.ok) return data;
+    const r = await c.auth.setSession({ access_token:data.session.access_token, refresh_token:data.session.refresh_token });
+    if(r.error) return {ok:false, motivo:'error_red'};
+    return {ok:true, usuario:data.usuario};
+  }catch(err){
+    return {ok:false, motivo:'error_red'};
+  }
+}
+function mensajeErrorLogin(r){
+  if(r.motivo==='pin_incorrecto'){
+    const n=r.intentos_restantes;
+    return 'PIN incorrecto.'+(n!=null ? ' Te queda'+(n===1?'':'n')+' '+n+' intento'+(n===1?'':'s')+' antes del bloqueo.' : ' Intenta de nuevo.');
+  }
+  if(r.motivo==='bloqueado'){
+    return 'Demasiados intentos fallidos. Podrás intentar de nuevo'+(r.bloqueado_hasta ? ' a las '+horaCorta(new Date(r.bloqueado_hasta).getTime()) : ' más tarde')+'.';
+  }
+  if(r.motivo==='usuario_invalido') return 'Usuario no disponible. Contacta a administración.';
+  if(r.motivo==='sin_pin') return 'Este usuario no tiene PIN. Pide a administración que lo restablezca.';
+  return 'No se pudo verificar el PIN. Revisa tu conexión e intenta de nuevo.';
+}
+async function cerrarSesion(vista, aviso){
+  detenerTiempoReal(vista);
+  if(vista==='mesero'){ ui.mesero.logueado=null; ui.mesero.pantalla='mesas'; ui.mesero.mesaActiva=null; }
+  else { ui.admin.logueado=null; ui.admin.usuarioSel=null; ui.admin.pantalla='dashboard'; ui.admin.pinNuevo=null; }
+  try{ await clientes[vista].auth.signOut({scope:'local'}); }catch(e){}
+  if(aviso) pushToast('🔒 Sesión cerrada', aviso);
+}
+// Al abrir la página, quién está dentro lo dice la sesión guardada por
+// Supabase Auth (no un valor editable en localStorage).
+async function restaurarSesiones(){
+  for(const vista of ['mesero','admin']){
+    let id=null;
+    try{
+      const {data} = await clientes[vista].auth.getSession();
+      const meta = data && data.session && data.session.user && data.session.user.app_metadata || {};
+      if(meta.mesero_id && meta.rol===vista) id=meta.mesero_id;
+    }catch(e){}
+    ui[vista].logueado=id;
+  }
+  ['mesero','admin'].forEach(function(vista){
+    clientes[vista].auth.onAuthStateChange(function(evento){
+      // p. ej. el refresh token venció o fue revocado: volver al login
+      if(evento==='SIGNED_OUT' && ui[vista].logueado){
+        ui[vista].logueado=null;
+        detenerTiempoReal(vista);
+        programarResync();
+      }
+    });
+  });
 }
 
 /* ============================================================
@@ -701,23 +818,19 @@ async function toggleEstadoProducto(idProducto,nuevoEstadoValor){
   const {error}=await sb.from('productos').update({estado:nuevoEstadoValor}).eq('id',idProducto);
   return {ok:!error};
 }
+// El PIN lo genera la base de datos y solo se guarda su hash; esta es la
+// única vez que viaja en claro (para mostrárselo a administración).
 async function crearMesero({nombre,usuario}){
-  const pin=String(Math.floor(1000+Math.random()*9000));
-  const id='u-'+Date.now();
-  const {error}=await sb.from('meseros').insert({id, restaurante_id:RESTAURANTE_ID, nombre, usuario, pin, estado:'activo', rol:'mesero'});
-  return error ? {ok:false,error} : {ok:true, pin};
+  const {data,error}=await sb.rpc('admin_crear_mesero', {p_nombre:nombre, p_usuario:usuario});
+  return error ? {ok:false,error} : {ok:true, pin:data.pin};
 }
 async function resetearPinMesero(idMesero){
-  const pin=String(Math.floor(1000+Math.random()*9000));
-  const {error}=await sb.from('meseros').update({pin}).eq('id',idMesero);
-  return error ? {ok:false,error} : {ok:true, pin};
+  const {data,error}=await sb.rpc('admin_restablecer_pin', {p_mesero_id:idMesero});
+  return error ? {ok:false,error} : {ok:true, pin:data.pin};
 }
 async function toggleEstadoMesero(idMesero,nuevoEstadoValor){
-  const {error}=await sb.from('meseros').update({estado:nuevoEstadoValor}).eq('id',idMesero);
-  return {ok:!error};
-}
-async function marcarUltimoIngreso(idMesero){
-  await sb.from('meseros').update({ultimo_ingreso:new Date().toISOString()}).eq('id',idMesero);
+  const {data,error}=await sb.from('meseros').update({estado:nuevoEstadoValor}).eq('id',idMesero).select('id');
+  return {ok:!error && !!data && data.length>0};
 }
 /* ============================================================
    3) ESTADO DE EJECUCIÓN + PERSISTENCIA LIGERA (por visor)
@@ -731,10 +844,10 @@ let ui = {
   cargando:true,
   errorConexion:null,
   mesero:{ logueado:null, pantalla:'mesas', mesaActiva:null, scannerAbierto:false,
-           usuarioSel:null, pinInput:'', loginError:null, obsEditIndex:null, obsTexto:'',
+           usuarioSel:null, pinInput:'', loginError:null, verificando:false, obsEditIndex:null, obsTexto:'',
            confirmando:false, confirmInfo:null, detalleMiPedido:null,
            turnoInicio:null },
-  admin:{ logueado:null, usuarioSel:null, pinInput:'', loginError:null,
+  admin:{ logueado:null, usuarioSel:null, pinInput:'', loginError:null, verificando:false,
           pantalla:'dashboard', filtroMesero:'todos', detalle:null, mesaInfo:null,
           facturaMesa:null, pagoFormaSel:null, productoEditPrecio:null, productoCrear:false,
           meseroCrear:false, meseroEditId:null, anularInfo:null, comprobante:null,
@@ -750,7 +863,7 @@ let toastSeq = 0;
 // enviar (para no perder un pedido a medio armar si se recarga).
 function guardar(){
   try{
-    localStorage.setItem('latinsoft_pedidos_ui_v1', JSON.stringify({vista:ui.vista, mesero:{logueado:ui.mesero.logueado, pantalla:ui.mesero.pantalla, turnoInicio:ui.mesero.turnoInicio}, admin:{logueado:ui.admin.logueado, pantalla:ui.admin.pantalla}}));
+    localStorage.setItem('latinsoft_pedidos_ui_v1', JSON.stringify({vista:ui.vista, mesero:{pantalla:ui.mesero.pantalla, turnoInicio:ui.mesero.turnoInicio}, admin:{pantalla:ui.admin.pantalla}}));
     localStorage.setItem('latinsoft_pedidos_carritos_v1', JSON.stringify(state.carritos));
   }catch(e){ /* almacenamiento no disponible: la app sigue funcionando igual */ }
 }
@@ -760,10 +873,9 @@ function cargar(){
     if(uRaw){
       const uParsed=JSON.parse(uRaw);
       ui.vista=uParsed.vista||'mesero';
-      ui.mesero.logueado=uParsed.mesero&&uParsed.mesero.logueado||null;
+      // quién está logueado NO se lee de aquí: lo decide la sesión de Supabase Auth (restaurarSesiones)
       ui.mesero.pantalla=(uParsed.mesero&&uParsed.mesero.pantalla)||'mesas';
       ui.mesero.turnoInicio=uParsed.mesero&&uParsed.mesero.turnoInicio||null;
-      ui.admin.logueado=uParsed.admin&&uParsed.admin.logueado||null;
       ui.admin.pantalla=(uParsed.admin&&uParsed.admin.pantalla)||'dashboard';
     }
     const cRaw=localStorage.getItem('latinsoft_pedidos_carritos_v1');
@@ -941,6 +1053,10 @@ function renderMesero(){
   }
 
   const mesero=getMesero(state,m.logueado);
+  if(!mesero){ // aún no llegan sus datos (o perdió el acceso): no hay nada que mostrar todavía
+    root.innerHTML = phoneFrame(pantallaLogin());
+    return;
+  }
   let contenido='';
   let modal='';
 
@@ -1007,9 +1123,9 @@ function pantallaLogin(){
       '<div class="sub">LatinSoft Pedidos · Ingreso de meseros</div>'+
       '<div class="user-pick">'+chips+'</div>'+
       '<div class="pin-dots">'+dots+'</div>'+
+      (m.verificando?'<div class="login-demo">Verificando PIN…</div>':'')+
       (m.loginError?'<div class="pin-error">'+esc(m.loginError)+'</div>':'')+
       '<div class="keypad">'+keypad+'</div>'+
-      '<div class="login-demo">Demo: pablo · 1234 &nbsp;·&nbsp; laura · 2222 &nbsp;·&nbsp; andres · 3333</div>'+
     '</div>'
   );
 }
@@ -1477,6 +1593,7 @@ function pantallaLoginAdmin(){
       '<div class="sub">LatinSoft Pedidos · Ingreso de administración</div>'+
       '<div class="user-pick">'+(chips||'<span class="mut" style="font-size:12px;color:var(--ink-500);max-width:220px;">No hay cuentas de administración activas. Créala en Supabase con rol = \'admin\'.</span>')+'</div>'+
       '<div class="pin-dots">'+dots+'</div>'+
+      (a.verificando?'<div class="login-demo">Verificando PIN…</div>':'')+
       (a.loginError?'<div class="pin-error">'+esc(a.loginError)+'</div>':'')+
       '<div class="keypad">'+keypad+'</div>'+
     '</div></div></div>'
@@ -1531,7 +1648,8 @@ function renderAdmin(){
     (a.anularInfo?modalAnular():'')+
     (a.productoCrear?modalProductoCrear():'')+
     (a.meseroCrear?modalMeseroCrear():'')+
-    (a.comprobante?modalComprobante():'')
+    (a.comprobante?modalComprobante():'')+
+    (a.pinNuevo?modalPinNuevo():'')
   );
 }
 
@@ -1908,24 +2026,42 @@ function modalProductoCrear(){
 /* ---------- Meseros ---------- */
 function adminMeseros(){
   const soloMeseros=state.meseros.filter(function(m){return (m.rol||'mesero')==='mesero';});
-  const rows=soloMeseros.map(function(m){
+  // caja/administración también aparece, para poder restablecer su PIN
+  const cuentasCaja=state.meseros.filter(function(m){return m.rol==='admin';});
+  const rows=soloMeseros.concat(cuentasCaja).map(function(m){
+    const esCaja=m.rol==='admin';
+    const esYo=m.id===ui.admin.logueado;
     return (
       '<tr>'+
-        '<td>'+esc(m.nombre)+'</td>'+
+        '<td>'+esc(m.nombre)+(esCaja?' <span class="mut">(caja)</span>':'')+'</td>'+
         '<td>@'+esc(m.usuario)+'</td>'+
         '<td><span class="pill-estado-mini '+(m.estado==='activo'?'activo':'inactivo')+'">'+(m.estado==='activo'?'Activo':'Inactivo')+'</span></td>'+
         '<td>'+(m.ultimoIngreso?horaCorta(m.ultimoIngreso):'—')+'</td>'+
         '<td style="display:flex; gap:6px; flex-wrap:wrap;">'+
           '<button class="btn btn-ghost btn-sm" data-action="mesero-resetear-pin" data-arg="'+m.id+'">Restablecer PIN</button>'+
-          '<button class="btn btn-ghost btn-sm" data-action="mesero-toggle-estado" data-arg="'+m.id+'">'+(m.estado==='activo'?'Desactivar':'Activar')+'</button>'+
+          (esYo?'':'<button class="btn btn-ghost btn-sm" data-action="mesero-toggle-estado" data-arg="'+m.id+'">'+(m.estado==='activo'?'Desactivar':'Activar')+'</button>')+
         '</td>'+
       '</tr>'
     );
   }).join('');
   return (
-    '<div class="admin-topline"><div><h2>Meseros</h2><div class="mut">'+soloMeseros.length+' meseros registrados</div></div>'+
+    '<div class="admin-topline"><div><h2>Meseros</h2><div class="mut">'+soloMeseros.length+' meseros registrados · el PIN solo se muestra al crearlo o restablecerlo</div></div>'+
       '<button class="btn btn-ember btn-sm" data-action="mesero-crear-abrir">+ Nuevo mesero</button></div>'+
     '<table class="data-table"><thead><tr><th>Nombre</th><th>Usuario</th><th>Estado</th><th>Último ingreso</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
+  );
+}
+
+function modalPinNuevo(){
+  const info=ui.admin.pinNuevo;
+  return (
+    '<div class="admin-modal-backdrop">'+
+      '<div class="admin-modal">'+
+        '<h3>'+esc(info.titulo)+'</h3>'+
+        '<div class="mut">PIN de '+esc(info.nombre)+'. Entrégaselo en persona: no se guarda en claro y no se volverá a mostrar.</div>'+
+        '<div id="pin-nuevo-valor" style="font-size:34px; font-weight:800; letter-spacing:10px; text-align:center; margin:18px 0;">'+esc(info.pin)+'</div>'+
+        '<div class="modal-actions"><button class="btn btn-ember" data-action="pin-nuevo-cerrar">Listo, ya lo anoté</button></div>'+
+      '</div>'+
+    '</div>'
   );
 }
 
@@ -2070,49 +2206,37 @@ function imprimir(html){
    ============================================================ */
 function loginUsuarioActual(){ return ui.mesero.usuarioSel; }
 
-async function intentarLogin(){
-  const m=ui.mesero;
-  const usr=getMesero(state,m.usuarioSel);
-  if(!usr){ m.loginError='Selecciona tu usuario.'; return; }
-  if(usr.estado!=='activo'){ m.loginError='Usuario desactivado. Contacta a administración.'; return; }
-  if(m.pinInput.length<4) return;
-  if(usr.pin!==m.pinInput){
-    m.loginError='PIN incorrecto. Intenta de nuevo.';
-    m.pinInput='';
-    return;
-  }
-  m.logueado=usr.id;
-  m.pantalla='mesas';
-  m.pinInput='';
-  m.loginError=null;
-  m.turnoInicio=Date.now();
+// Mesero y caja comparten el flujo; cambia solo la vista (y con ella el
+// cliente de Supabase y el rol que se exige en el servidor).
+async function intentarLoginEn(vista){
+  const u=ui[vista];
+  const usr=getMesero(state,u.usuarioSel);
+  if(!usr){ u.loginError='Selecciona tu usuario.'; u.pinInput=''; return; }
+  if(u.pinInput.length<4) return;
+  const pin=u.pinInput;
+  u.pinInput='';
+  u.loginError=null;
+  u.verificando=true;
+  render();
+  const r = await iniciarSesionConPin(vista, usr.id, pin);
+  u.verificando=false;
+  if(!r.ok){ u.loginError=mensajeErrorLogin(r); return; }
+  u.logueado=usr.id;
+  if(vista==='mesero'){ u.pantalla='mesas'; u.turnoInicio=Date.now(); }
+  iniciarTiempoReal(vista);
   pushToast('👋 Bienvenido', usr.nombre+' inició sesión.');
-  marcarUltimoIngreso(usr.id); // no bloquea el login si tarda o falla
 }
-
-async function intentarLoginAdmin(){
-  const a=ui.admin;
-  const usr=getMesero(state,a.usuarioSel);
-  if(!usr){ a.loginError='Selecciona tu usuario.'; return; }
-  if(usr.estado!=='activo'){ a.loginError='Usuario desactivado.'; return; }
-  if(a.pinInput.length<4) return;
-  if(usr.pin!==a.pinInput){
-    a.loginError='PIN incorrecto. Intenta de nuevo.';
-    a.pinInput='';
-    return;
-  }
-  a.logueado=usr.id;
-  a.pinInput='';
-  a.loginError=null;
-  pushToast('👋 Bienvenido', usr.nombre+' inició sesión.');
-  marcarUltimoIngreso(usr.id);
-}
+async function intentarLogin(){ await intentarLoginEn('mesero'); }
+async function intentarLoginAdmin(){ await intentarLoginEn('admin'); }
 
 async function manejarAccion(actionEl){
   const action=actionEl.getAttribute('data-action');
   const arg=actionEl.getAttribute('data-arg');
   const m=ui.mesero, a=ui.admin;
   let necesitaResync=false; // las acciones que escriben en Supabase lo marcan en true
+  // las escrituras van con la sesión de la vista donde se hizo el clic
+  const vistaDelClic = actionEl.closest('#vista-admin') ? 'admin' : (actionEl.closest('#vista-mesero') ? 'mesero' : null);
+  if(vistaDelClic && clientes[vistaDelClic]) sb = clientes[vistaDelClic];
 
   switch(action){
     /* ---- globales ---- */
@@ -2122,19 +2246,21 @@ async function manejarAccion(actionEl){
     /* ---- login ---- */
     case 'login-usuario-select': m.usuarioSel=arg; m.loginError=null; break;
     case 'login-pin-digit':
+      if(m.verificando) return;
       if(m.pinInput.length<4) m.pinInput+=arg;
-      if(m.pinInput.length===4) await intentarLogin();
+      if(m.pinInput.length===4){ await intentarLogin(); necesitaResync=!!m.logueado; }
       break;
     case 'login-pin-borrar': m.pinInput=m.pinInput.slice(0,-1); m.loginError=null; break;
 
     /* ---- login admin ---- */
     case 'admin-login-usuario-select': a.usuarioSel=arg; a.loginError=null; break;
     case 'admin-login-pin-digit':
+      if(a.verificando) return;
       if(a.pinInput.length<4) a.pinInput+=arg;
-      if(a.pinInput.length===4) await intentarLoginAdmin();
+      if(a.pinInput.length===4){ await intentarLoginAdmin(); necesitaResync=!!a.logueado; }
       break;
     case 'admin-login-pin-borrar': a.pinInput=a.pinInput.slice(0,-1); a.loginError=null; break;
-    case 'admin-logout': a.logueado=null; a.usuarioSel=null; a.pantalla='dashboard'; break;
+    case 'admin-logout': await cerrarSesion('admin'); necesitaResync=true; break;
 
     /* ---- navegación mesero ---- */
     case 'mesero-tab':
@@ -2143,7 +2269,7 @@ async function manejarAccion(actionEl){
         else { m.pantalla='pedido'; m.scannerAbierto=true; }
       } else { m.pantalla=arg; }
       break;
-    case 'mesero-logout': m.logueado=null; m.pantalla='mesas'; m.mesaActiva=null; break;
+    case 'mesero-logout': await cerrarSesion('mesero'); necesitaResync=true; break;
     case 'mesa-tap': m.mesaActiva=arg; m.pantalla='pedido'; break;
     case 'volver-mesas': m.pantalla='mesas'; m.mesaActiva=null; break;
 
@@ -2411,6 +2537,7 @@ async function manejarAccion(actionEl){
 
     /* ---- meseros ---- */
     case 'mesero-crear-abrir': a.meseroCrear=true; break;
+    case 'pin-nuevo-cerrar': a.pinNuevo=null; break;
     case 'mesero-crear-cancelar': a.meseroCrear=false; break;
     case 'mesero-crear-guardar': {
       const nombre=(document.getElementById('mesero-nombre-input')||{}).value||'';
@@ -2418,14 +2545,14 @@ async function manejarAccion(actionEl){
       if(!nombre.trim()||!usuario.trim()){ pushToast('⚠️ Datos incompletos','Ingresa nombre y usuario.'); break; }
       const r = await crearMesero({nombre:nombre.trim(), usuario:usuario.trim().toLowerCase()});
       a.meseroCrear=false;
-      if(r.ok){ necesitaResync=true; pushToast('✅ Mesero creado', 'PIN asignado: '+r.pin+' (guárdalo, no se mostrará de nuevo)'); }
-      else pushToast('⚠️ No se pudo crear','Revisa que el usuario no esté repetido.');
+      if(r.ok){ necesitaResync=true; a.pinNuevo={titulo:'✅ Mesero creado', nombre:nombre.trim(), pin:r.pin}; }
+      else pushToast('⚠️ No se pudo crear','El usuario debe ser único y usar solo minúsculas, números, punto o guion (sin espacios).');
       break;
     }
     case 'mesero-resetear-pin': {
       const mesero=getMesero(state,arg);
       const r = await resetearPinMesero(arg);
-      if(r.ok){ necesitaResync=true; pushToast('🔑 PIN restablecido', mesero.nombre+': '+r.pin+' (guárdalo, no se mostrará de nuevo)'); }
+      if(r.ok){ necesitaResync=true; a.pinNuevo={titulo:'🔑 PIN restablecido', nombre:mesero.nombre, pin:r.pin}; }
       else pushToast('⚠️ No se pudo restablecer','Revisa tu conexión e intenta de nuevo.');
       break;
     }
@@ -2436,8 +2563,7 @@ async function manejarAccion(actionEl){
       if(r.ok){
         necesitaResync=true;
         if(nuevo==='inactivo' && ui.mesero.logueado===arg){
-          ui.mesero.logueado=null;
-          pushToast('🔒 Sesión cerrada', mesero.nombre+' fue desactivado.');
+          await cerrarSesion('mesero', mesero.nombre+' fue desactivado.');
         }
       } else pushToast('⚠️ No se pudo guardar','Revisa tu conexión e intenta de nuevo.');
       break;
@@ -2508,6 +2634,7 @@ window.__aplicarDescuento=function(val){
   const mesa=getMesa(state,ui.admin.facturaMesa);
   if(!mesa||!mesa.idPedidoActivo) return;
   const pedido=getPedido(state,mesa.idPedidoActivo);
+  sb = clientes.admin; // se llama desde un input del panel de caja
   aplicarServicioDescuento(state,pedido.id,{descuento:Math.max(0,parseFloat(val||'0'))});
   render();
 };
@@ -2546,10 +2673,11 @@ renderMesero = function(){
 async function arrancar(){
   render(); // primer pintado: pantalla de "falta configurar" o "cargando"
   if(!SUPABASE_CONFIGURADO) return;
+  if(clientes.mesero) await restaurarSesiones();
   const r = await syncFromSupabase();
   if(r.ok){
     ui.cargando = false;
-    iniciarTiempoReal();
+    ['mesero','admin'].forEach(function(vista){ if(ui[vista].logueado) iniciarTiempoReal(vista); });
   } else {
     ui.cargando = false;
     ui.errorConexion = true;

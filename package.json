@@ -2,13 +2,17 @@
   "name": "latinsoft-pedidos",
   "version": "0.1.0",
   "private": true,
-  "description": "Prototipo funcional del MVP de LatinSoft Pedidos (app de mesero + panel administrativo) en un solo HTML autocontenido.",
+  "description": "LatinSoft Pedidos: app de mesero + panel de caja en un solo HTML, sobre Supabase (login por PIN verificado en el servidor).",
   "scripts": {
-    "test": "node tests/logic.test.js && node tests/e2e.test.js",
+    "test": "node tests/logic.test.js && node tests/login-pin.test.mjs && node tests/e2e.test.js",
     "test:logic": "node tests/logic.test.js",
-    "test:e2e": "node tests/e2e.test.js"
+    "test:e2e": "node tests/e2e.test.js",
+    "test:login": "node tests/login-pin.test.mjs"
   },
   "devDependencies": {
     "jsdom": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=22.18"
   }
 }
