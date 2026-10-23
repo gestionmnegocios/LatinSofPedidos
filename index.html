@@ -238,6 +238,12 @@ input,textarea,select{font-family:inherit;}
 .menu-footer{padding:10px 14px 14px; background:#fff; border-top:1px solid var(--cream-200);}
 .menu-footer .btn{display:flex; justify-content:space-between; align-items:center; gap:10px;}
 
+/* Cambio de mesa: cuadrícula de mesas libres */
+.mesa-elegir-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:6px 0 4px;}
+.mesa-elegir{aspect-ratio:1; border-radius:50%; border:1.5px solid var(--cream-200); background:#fff; font-weight:800; font-size:15px; color:var(--ink-900);}
+.mesa-elegir.sel{background:var(--ember-500); border-color:var(--ember-500); color:#fff;}
+.cambio-mesa-vacio{font-size:13px; color:var(--ink-500); padding:10px 0;}
+
 /* Foto de producto en el panel de caja */
 .prod-thumb{width:46px; height:46px; border-radius:8px; object-fit:cover; display:block; background:#EEF2F7;}
 .prod-thumb.sin-foto{display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:var(--ink-500);}
@@ -628,8 +634,8 @@ function mensajeErrorLogin(r){
 }
 async function cerrarSesion(vista, aviso){
   detenerTiempoReal(vista);
-  if(vista==='mesero'){ ui.mesero.logueado=null; ui.mesero.pantalla='mesas'; ui.mesero.mesaActiva=null; }
-  else { ui.admin.logueado=null; ui.admin.usuarioSel=null; ui.admin.pantalla='dashboard'; ui.admin.pinNuevo=null; }
+  if(vista==='mesero'){ ui.mesero.logueado=null; ui.mesero.pantalla='mesas'; ui.mesero.mesaActiva=null; ui.mesero.cambioMesa=null; }
+  else { ui.admin.logueado=null; ui.admin.usuarioSel=null; ui.admin.pantalla='dashboard'; ui.admin.pinNuevo=null; ui.admin.cambioMesa=null; }
   try{ await clientes[vista].auth.signOut({scope:'local'}); }catch(e){}
   if(aviso) pushToast('🔒 Sesión cerrada', aviso);
 }
@@ -766,6 +772,34 @@ async function anularRonda(s,idPedido,idRonda,motivo,usuario){
   const {error}=await sb.from('rondas').update({estado:'anulado', motivo_anulacion:motivo, historial}).eq('id',idRonda);
   return error ? {ok:false,motivo:'error_db',error} : {ok:true};
 }
+// Traslada el pedido abierto de una mesa a otra libre (rondas, cuenta y pagos
+// cuelgan del pedido, así que viajan con él). Lo hace el servidor de forma
+// atómica con cambiar_mesa. El carrito sin enviar de este equipo también se muda.
+function mesasLibresPara(s,idOrigen){
+  return s.mesas.filter(function(me){
+    const carrito=s.carritos[me.id];
+    return me.id!==idOrigen && !me.idPedidoActivo && !(carrito && carrito.items.length);
+  });
+}
+async function cambiarMesa(s,idOrigen,idDestino){
+  const origen=getMesa(s,idOrigen), destino=getMesa(s,idDestino);
+  if(!origen || !destino || idOrigen===idDestino) return {ok:false, motivo:'misma_mesa'};
+  if(origen.idPedidoActivo){
+    const {data,error}=await sb.rpc('cambiar_mesa', {p_mesa_origen:idOrigen, p_mesa_destino:idDestino});
+    if(error) return {ok:false, motivo:'error_db', error};
+    if(!data || !data.ok) return data || {ok:false, motivo:'error_db'};
+  }
+  const carrito=s.carritos[idOrigen];
+  if(carrito){ s.carritos[idDestino]=carrito; delete s.carritos[idOrigen]; }
+  return {ok:true, mesaOrigen:origen.numero, mesaDestino:destino.numero};
+}
+function mensajeErrorCambioMesa(r){
+  if(r.motivo==='destino_ocupado') return 'Esa mesa se acaba de ocupar. Elige otra.';
+  if(r.motivo==='pedido_cerrado') return 'Esa cuenta ya fue cobrada.';
+  if(r.motivo==='origen_sin_pedido') return 'La mesa ya no tiene un pedido abierto.';
+  return 'Revisa tu conexión e intenta de nuevo.';
+}
+
 async function pedirCuenta(s,idPedido){
   const {error}=await sb.from('pedidos').update({estado_cuenta:'cuenta_solicitada', cuenta_solicitada_en:new Date().toISOString()}).eq('id',idPedido);
   return error ? {ok:false,motivo:'error_db',error} : {ok:true};
@@ -1103,7 +1137,7 @@ function tick(){
   const typing = active && (active.tagName==='INPUT' || active.tagName==='TEXTAREA');
   if(!typing){
     // solo refrescamos los tiempos relativos / kanban si no hay modales de edición abiertos
-    if(!ui.admin.anularInfo && !ui.admin.productoCrear && !ui.admin.meseroCrear && ui.admin.meseroEditId==null && ui.admin.productoEditPrecio==null){
+    if(!ui.admin.anularInfo && !ui.admin.productoCrear && !ui.admin.meseroCrear && !ui.admin.cambioMesa && ui.admin.meseroEditId==null && ui.admin.productoEditPrecio==null){
       renderAdmin();
     }
     if(ui.mesero.obsEditIndex==null){
@@ -1145,6 +1179,7 @@ function renderMesero(){
 
   if(m.detalleMiPedido) modal=modalDetalleMiPedido();
   if(m.obsEditIndex!=null) modal=modalObservacion();
+  if(m.cambioMesa) modal=modalCambioMesaMesero();
 
   const header = (m.pantalla!=='perfil') ? (
     '<div class="m-header"><h1>'+esc(state.restaurante.nombre)+'</h1>'+
@@ -1304,6 +1339,7 @@ function pantallaPedido(mesero){
     (carrito.items.length>0?('<div class="cart-summary"><span>Subtotal de esta ronda</span><span class="cart-total">'+money(subtotalDraft)+'</span></div>'):'')+
     '<div class="sticky-actions">'+
       '<button class="btn btn-ghost btn-block" data-action="abrir-menu">📋 Agregar productos</button>'+
+      ((pedido || carrito.items.length>0)?'<button class="btn btn-ghost btn-block" data-action="cambio-mesa-abrir">🔀 Cambiar de mesa</button>':'')+
       '<button class="btn btn-ember btn-block" data-action="enviar-pedido-confirmar-abrir" '+(puedeEnviar?'':'disabled')+'>Enviar pedido</button>'+
       (puedePedirCuenta?'<button class="btn btn-gold btn-block" data-action="pedir-cuenta">Pedir cuenta</button>':'')+
     '</div>'
@@ -1508,6 +1544,33 @@ function modalObservacion(){
   );
 }
 
+/* Cambio de mesa: elegir la mesa libre de destino */
+function contenidoCambioMesa(info,prefijo){
+  const origen=getMesa(state,info.origen);
+  const libres=mesasLibresPara(state,info.origen);
+  const destino=info.destino?getMesa(state,info.destino):null;
+  const grid = libres.length
+    ? '<div class="mesa-elegir-grid">'+libres.map(function(me){
+        return '<button class="mesa-elegir'+(info.destino===me.id?' sel':'')+'" data-action="'+prefijo+'cambio-mesa-elegir" data-arg="'+me.id+'">'+me.numero+'</button>';
+      }).join('')+'</div>'
+    : '<div class="cambio-mesa-vacio">No hay mesas libres en este momento.</div>';
+  return (
+    '<h3>Cambiar de mesa</h3>'+
+    '<div class="mut">El pedido, la cuenta y los pagos de la Mesa '+esc(String(origen?origen.numero:''))+' pasan a la mesa que elijas.</div>'+
+    grid+
+    '<div style="display:flex; gap:8px; margin-top:14px;">'+
+      '<button class="btn btn-ghost btn-block" data-action="'+prefijo+'cambio-mesa-cancelar">Cancelar</button>'+
+      '<button class="btn btn-ember btn-block" data-action="'+prefijo+'cambio-mesa-confirmar" '+(destino?'':'disabled')+'>'+(destino?'Mover a Mesa '+destino.numero:'Elige una mesa')+'</button>'+
+    '</div>'
+  );
+}
+function modalCambioMesaMesero(){
+  return '<div class="m-modal-backdrop"><div class="m-modal">'+contenidoCambioMesa(ui.mesero.cambioMesa,'')+'</div></div>';
+}
+function modalCambioMesaAdmin(){
+  return '<div class="admin-modal-backdrop"><div class="admin-modal">'+contenidoCambioMesa(ui.admin.cambioMesa,'admin-')+'</div></div>';
+}
+
 /* Modal de confirmación de envío (independiente, controlado por bandera) */
 function modalConfirmarEnvio(){
   const mesa=getMesa(state,ui.mesero.mesaActiva);
@@ -1608,7 +1671,8 @@ function renderAdmin(){
     (a.productoCrear?modalProductoCrear():'')+
     (a.meseroCrear?modalMeseroCrear():'')+
     (a.comprobante?modalComprobante():'')+
-    (a.pinNuevo?modalPinNuevo():'')
+    (a.pinNuevo?modalPinNuevo():'')+
+    (a.cambioMesa?modalCambioMesaAdmin():'')
   );
 }
 
@@ -1781,6 +1845,7 @@ function panelMesaInfo(){
       '<div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap;">'+
         '<button class="btn btn-ghost btn-sm" data-action="admin-nav" data-arg="dashboard">Ver pedido</button>'+
         (pedido.estadoCuenta!=='pagado'?'<button class="btn btn-gold btn-sm" data-action="ir-facturar" data-arg="'+mesa.id+'">Facturar</button>':'')+
+        (pedido.estadoCuenta!=='pagado'?'<button class="btn btn-ghost btn-sm" data-action="admin-cambio-mesa-abrir" data-arg="'+mesa.id+'">🔀 Cambiar de mesa</button>':'')+
       '</div>'
     );
   }
@@ -2244,7 +2309,26 @@ async function manejarAccion(actionEl){
       m.menuBusqueda=''; m.menuCategoria='todas';
       break;
     }
-    case 'volver-mesas': m.pantalla='mesas'; m.mesaActiva=null; m.menuAbierto=false; break;
+    case 'volver-mesas': m.pantalla='mesas'; m.mesaActiva=null; m.menuAbierto=false; m.cambioMesa=null; break;
+
+    /* ---- cambio de mesa (mesero) ---- */
+    case 'cambio-mesa-abrir': m.cambioMesa={origen:m.mesaActiva, destino:null}; break;
+    case 'cambio-mesa-cancelar': m.cambioMesa=null; break;
+    case 'cambio-mesa-elegir': if(m.cambioMesa) m.cambioMesa.destino=arg; break;
+    case 'cambio-mesa-confirmar': {
+      const info=m.cambioMesa; if(!info || !info.destino) break;
+      const r = await cambiarMesa(state, info.origen, info.destino);
+      if(r.ok){
+        m.cambioMesa=null; m.mesaActiva=info.destino; necesitaResync=true;
+        pushToast('🔀 Cambio de mesa', 'Mesa '+r.mesaOrigen+' → Mesa '+r.mesaDestino);
+      } else {
+        if(r.motivo==='destino_ocupado') info.destino=null;
+        else m.cambioMesa=null;
+        necesitaResync=true;
+        pushToast('⚠️ No se pudo cambiar de mesa', mensajeErrorCambioMesa(r));
+      }
+      break;
+    }
 
     /* ---- menú táctil ---- */
     case 'abrir-menu': m.menuAbierto=true; break;
@@ -2379,6 +2463,27 @@ async function manejarAccion(actionEl){
     /* ---- mesas admin ---- */
     case 'admin-mesa-tap': a.mesaInfo=arg; break;
     case 'admin-mesa-cerrar-panel': a.mesaInfo=null; break;
+
+    /* ---- cambio de mesa (caja) ---- */
+    case 'admin-cambio-mesa-abrir': a.cambioMesa={origen:arg, destino:null}; a.mesaInfo=null; break;
+    case 'admin-cambio-mesa-cancelar': a.cambioMesa=null; break;
+    case 'admin-cambio-mesa-elegir': if(a.cambioMesa) a.cambioMesa.destino=arg; break;
+    case 'admin-cambio-mesa-confirmar': {
+      const info=a.cambioMesa; if(!info || !info.destino) break;
+      const r = await cambiarMesa(state, info.origen, info.destino);
+      if(r.ok){
+        a.cambioMesa=null; necesitaResync=true;
+        if(a.facturaMesa===info.origen) a.facturaMesa=info.destino;
+        if(ui.mesero.mesaActiva===info.origen) ui.mesero.mesaActiva=info.destino; // mismo equipo con la vista del mesero
+        pushToast('🔀 Cambio de mesa', 'Mesa '+r.mesaOrigen+' → Mesa '+r.mesaDestino);
+      } else {
+        if(r.motivo==='destino_ocupado') info.destino=null;
+        else a.cambioMesa=null;
+        necesitaResync=true;
+        pushToast('⚠️ No se pudo cambiar de mesa', mensajeErrorCambioMesa(r));
+      }
+      break;
+    }
     case 'ir-facturar': a.pantalla='facturacion'; a.facturaMesa=arg; a.mesaInfo=null; a.pagoFormaSel=null; break;
 
     /* ---- facturación ---- */

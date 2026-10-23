@@ -179,6 +179,19 @@ function crearCliente(backend, nombre, storageKey) {
             .map(m => ({ id: m.id, nombre: m.nombre, rol: m.rol })),
         }, error: null };
       }
+      if (fn === 'cambiar_mesa') {
+        if (!yo) return err('42501', 'Sin permiso para cambiar de mesa');
+        if (!args.p_mesa_origen || args.p_mesa_origen === args.p_mesa_destino) return { data: { ok: false, motivo: 'misma_mesa' }, error: null };
+        const o = backend.db.mesas.find(x => x.id === args.p_mesa_origen && x.restaurante_id === yo.restaurante_id);
+        const d = backend.db.mesas.find(x => x.id === args.p_mesa_destino && x.restaurante_id === yo.restaurante_id);
+        if (!o || !d) return { data: { ok: false, motivo: 'mesa_no_existe' }, error: null };
+        if (!o.pedido_activo_id) return { data: { ok: false, motivo: 'origen_sin_pedido' }, error: null };
+        if (d.pedido_activo_id) return { data: { ok: false, motivo: 'destino_ocupado', mesa_destino: d.numero }, error: null };
+        const ped = backend.db.pedidos.find(x => x.id === o.pedido_activo_id && x.estado_cuenta !== 'pagado');
+        if (!ped) return { data: { ok: false, motivo: 'pedido_cerrado' }, error: null };
+        ped.mesa_id = d.id; d.pedido_activo_id = ped.id; o.pedido_activo_id = null;
+        return { data: { ok: true, pedido_id: ped.id, mesa_origen: o.numero, mesa_destino: d.numero }, error: null };
+      }
       if (!yo || yo.rol !== 'admin') return err('42501', 'Solo administración');
       if (fn === 'admin_crear_mesero') {
         if (!/^[a-z0-9._-]{2,30}$/.test(args.p_usuario) || backend.db.meseros.some(m => m.usuario === args.p_usuario)) return err('22023', 'usuario inválido');

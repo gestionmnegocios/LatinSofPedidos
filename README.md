@@ -5,7 +5,7 @@ App de pedidos para restaurantes con dos interfaces en un solo `index.html`
 
 - **📱 App del mesero** — login con PIN, mapa de mesas, menú táctil con foto,
   nombre y precio de cada producto (+ / – para la cantidad), carrito con
-  observaciones, envío de pedidos y rondas, "Mis pedidos".
+  observaciones, envío de pedidos y rondas, cambio de mesa, "Mis pedidos".
 - **🖥️ Panel de caja / administración** — kanban en tiempo real, mapa de
   mesas, facturación (servicio, descuento, pago mixto), productos (con su
   foto), meseros y ventas del día.
@@ -44,6 +44,16 @@ Functions).
 La clave publicable que está en `index.html` es pública por diseño: sin una
 sesión obtenida con un PIN válido no da acceso a ningún dato.
 
+## Cambio de mesa
+
+Desde la mesa (app del mesero) o desde su panel en Caja → Mesas, "🔀 Cambiar
+de mesa" traslada el pedido abierto a una mesa **libre**: rondas, cuenta y
+pagos registrados viajan con el pedido, y el carrito sin enviar de ese
+equipo también se muda. Lo hace la función `cambiar_mesa` en el servidor, en
+un solo paso y con las dos mesas bloqueadas, así que si otra persona ocupa la
+mesa destino en ese instante el cambio se rechaza sin dejar nada a medias.
+Una cuenta ya cobrada no se puede mover.
+
 ## Fotos de productos
 
 Se suben desde Caja → Productos ("📷 Subir" / "Cambiar" / "Quitar", o al crear
@@ -63,7 +73,8 @@ reducida.
 │   ├── migrations/                  # SQL aplicado en el proyecto de Supabase
 │   │   ├── …_auth_pin_fase1.sql     # PIN con hash, sesiones, RLS por rol (compatible con la versión anterior)
 │   │   ├── …_auth_pin_fase2_cerrar_anon.sql  # quita el acceso anon y la columna meseros.pin
-│   │   └── …_imagenes_productos.sql # productos.imagen_url + bucket "productos" con permisos de caja
+│   │   ├── …_imagenes_productos.sql # productos.imagen_url + bucket "productos" con permisos de caja
+│   │   └── …_cambiar_mesa.sql       # función cambiar_mesa (traslado atómico del pedido)
 │   ├── functions/login-pin/         # Edge Function del login (index.ts + handler.ts, probable con node)
 │   └── tests/fase1_rls_rollback.sql # pruebas de RLS por rol dentro de una transacción que se revierte
 └── tests/

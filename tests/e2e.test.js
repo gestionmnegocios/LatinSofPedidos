@@ -424,6 +424,76 @@ function mismoTexto(el, ...variantes) { const t = text(el); return variantes.som
   assert(backend.db.meseros.find(m => m.id === 'u-pablo').estado === 'activo', 'pablo se puede reactivar');
 
   // ============================================================
+  // 10b) Cambio de mesa
+  // ============================================================
+  // pablo (reactivado) vuelve a entrar y abre un pedido en la Mesa 7 con un pago parcial
+  await clickAction('switch-vista', 'mesero');
+  await clickAction('login-usuario-select', 'u-pablo');
+  await teclearPin('', pinNuevoPablo);
+  await clickAction('mesa-tap', 'mesa-7');
+  await clickAction('menu-mas', 'p-limonada');
+  await clickAction('menu-ir-carrito');
+  await clickAction('enviar-pedido-confirmar-abrir');
+  await clickAction('enviar-pedido-confirmar-si');
+  await clickAction('confirmacion-nuevo-pedido');
+  const idPedidoMesa7 = backend.db.mesas.find(x => x.id === 'mesa-7').pedido_activo_id;
+  assert(!!idPedidoMesa7, 'la Mesa 7 quedó con pedido abierto');
+  backend.db.pagos.push({ id: 900, pedido_id: idPedidoMesa7, forma_pago: 'efectivo', valor: 5000, recibido: null, hora: new Date().toISOString() });
+  // y deja algo sin enviar en el carrito de esa mesa
+  await clickAction('abrir-menu');
+  await clickAction('menu-mas', 'p-arepa');
+  await clickAction('menu-ir-carrito');
+
+  await clickAction('cambio-mesa-abrir');
+  assert(!!q('.mesa-elegir-grid'), 'se abre la ventana para elegir mesa');
+  const ofrecidas = qa('[data-action="cambio-mesa-elegir"]').map(b => b.getAttribute('data-arg'));
+  assert(ofrecidas.indexOf('mesa-7') === -1 && ofrecidas.indexOf('mesa-4') === -1, 'no ofrece la misma mesa ni mesas ocupadas — ' + ofrecidas.join(','));
+  assert(ofrecidas.indexOf('mesa-8') !== -1, 'ofrece mesas libres');
+  assert(q('[data-action="cambio-mesa-confirmar"]').hasAttribute('disabled'), 'no se puede confirmar sin elegir mesa');
+
+  // otra persona ocupa la Mesa 8 justo antes de confirmar: el servidor lo rechaza
+  await clickAction('cambio-mesa-elegir', 'mesa-8');
+  assert(text(q('[data-action="cambio-mesa-confirmar"]')).includes('Mesa 8'), 'el botón dice a qué mesa se mueve');
+  backend.db.mesas.find(x => x.id === 'mesa-8').pedido_activo_id = idPedidoMesa4;
+  await clickAction('cambio-mesa-confirmar');
+  assert(qa('.toast').some(t => text(t).includes('se acaba de ocupar')), 'si el destino se ocupó, avisa y deja elegir otra');
+  assert(backend.db.mesas.find(x => x.id === 'mesa-7').pedido_activo_id === idPedidoMesa7, 'y no movió nada');
+  assert(!!q('.mesa-elegir-grid') && qa('[data-action="cambio-mesa-elegir"]').every(b => b.getAttribute('data-arg') !== 'mesa-8'), 'la Mesa 8 ya no aparece como libre');
+  backend.db.mesas.find(x => x.id === 'mesa-8').pedido_activo_id = null;
+
+  await clickAction('cambio-mesa-elegir', 'mesa-12');
+  await clickAction('cambio-mesa-confirmar');
+  assert(backend.db.mesas.find(x => x.id === 'mesa-7').pedido_activo_id === null, 'la Mesa 7 queda libre');
+  assert(backend.db.mesas.find(x => x.id === 'mesa-12').pedido_activo_id === idPedidoMesa7, 'la Mesa 12 queda con el pedido');
+  assert(backend.db.pedidos.find(x => x.id === idPedidoMesa7).mesa_id === 'mesa-12', 'el pedido apunta a la Mesa 12');
+  assert(backend.db.pagos.filter(x => x.pedido_id === idPedidoMesa7).length === 1, 'los pagos siguen con el pedido');
+  assert(text(q('.pedido-topbar h2')) === 'Mesa 12', 'el mesero queda en la Mesa 12');
+  assert(qa('.cart-item').some(c => text(c).includes('Arepa')), 'el carrito sin enviar se mudó con la mesa');
+  assert(qa('.ronda-prev').length === 1 && text(q('.ronda-prev')).includes('Limonada'), 'las rondas enviadas se ven en la mesa nueva');
+  assert(backend.log.rpc.some(r => r.fn === 'cambiar_mesa' && r.cliente === 'mesero'), 'el cambio lo hizo el servidor con la sesión del mesero');
+  await clickAction('volver-mesas');
+  assert(text(q('[data-action="mesa-tap"][data-arg="mesa-7"]')).includes('Disponible'), 'en el mapa la Mesa 7 aparece disponible');
+
+  // caja también puede cambiar de mesa, y facturación sigue a la mesa nueva
+  await clickAction('switch-vista', 'admin');
+  await clickAction('admin-nav', 'mesas');
+  await clickAction('admin-mesa-tap', 'mesa-12');
+  await clickAction('admin-cambio-mesa-abrir', 'mesa-12');
+  await clickAction('admin-cambio-mesa-elegir', 'mesa-15');
+  await clickAction('admin-cambio-mesa-confirmar');
+  assert(backend.db.pedidos.find(x => x.id === idPedidoMesa7).mesa_id === 'mesa-15' && backend.db.mesas.find(x => x.id === 'mesa-12').pedido_activo_id === null, 'caja movió el pedido a la Mesa 15');
+  assert(text(q('[data-action="admin-mesa-tap"][data-arg="mesa-15"]')).includes('Pedido enviado'), 'el mapa de caja refleja el cambio');
+  await clickAction('admin-mesa-tap', 'mesa-15');
+  await clickAction('ir-facturar', 'mesa-15');
+  assert(mismoTexto(q('.total-line.grand'), '9.350', '9,350'), 'la cuenta (limonada 8.500 + 10%) se factura en la Mesa 15 — ' + text(q('.total-line.grand')));
+  await clickAction('admin-nav', 'dashboard');
+  assert(qa('.kcard').some(c => text(c).includes(idPedidoMesa7) && text(c).includes('Mesa 15')), 'el kanban muestra el pedido en la Mesa 15');
+  await clickAction('switch-vista', 'mesero');
+  await clickAction('mesero-tab', 'perfil');
+  await clickAction('mesero-logout');
+  await clickAction('switch-vista', 'admin');
+
+  // ============================================================
   // 11) Ventas del día
   // ============================================================
   await clickAction('admin-nav', 'ventas');
