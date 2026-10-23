@@ -117,21 +117,57 @@ function mismoTexto(el, ...variantes) { const t = text(el); return variantes.som
   assert(!backend.almacen['latinsoft-sesion-admin'], 'la vista de caja sigue sin sesión');
 
   // ============================================================
-  // 2) Flujo feliz: Mesa 1 disponible -> escanear -> enviar
+  // 2) Flujo feliz: Mesa 1 -> menú táctil -> carrito -> enviar
   // ============================================================
+  assert(!html.includes('zxing') && !html.includes('getUserMedia') && !html.includes('BarcodeDetector'), 'la app ya no carga lector de códigos ni pide la cámara');
   const mesa1Btn = q('[data-action="mesa-tap"][data-arg="mesa-1"]');
   assert(!!mesa1Btn && text(mesa1Btn).includes('Disponible'), 'Mesa 1 arranca disponible');
   await clickAction('mesa-tap', 'mesa-1');
-  assert(!!q('.carrito-empty'), 'el carrito de la Mesa 1 arranca vacío');
+  assert(!!q('.menu-ov'), 'una mesa libre abre directo el menú táctil');
+  assert(qa('.menu-card').length === 12, 'el menú muestra los 12 productos como cuadros');
+  const cardHamb = () => q('.menu-card[data-producto="p-hamb-esp"]');
+  const imgHamb = cardHamb().querySelector('img.menu-img');
+  assert(!!imgHamb && imgHamb.getAttribute('src') === fake.URL_PUBLICA + 'rest-fogon/p-hamb-esp-1.jpg', 'el producto con foto muestra su imagen');
+  assert(!!q('.menu-card[data-producto="p-papas"] .menu-img.sin-foto'), 'un producto sin foto muestra sus iniciales');
+  assert(text(cardHamb()).includes('Hamburguesa Especial') && mismoTexto(cardHamb(), '28.000', '28,000'), 'el cuadro muestra nombre y precio');
+  assert(text(cardHamb().querySelector('.qty-val')) === '0' && cardHamb().querySelector('[data-action="menu-menos"]').hasAttribute('disabled'), 'arranca en 0 y sin poder restar');
 
-  await clickAction('abrir-scanner');
-  assert(qa('.scan-card').length === 12, 'se listan los 12 productos del catálogo en el escáner');
-  await clickAction('scan-producto', 'p-hamb-esp');
-  await clickAction('scan-producto', 'p-hamb-esp');
-  await clickAction('cerrar-scanner');
-  assert(!!q('.cart-item'), 'el carrito muestra el producto escaneado');
-  assert(text(q('.qty-val')) === '2', 'la segunda lectura sumó una unidad (cantidad = 2)');
+  await clickEl(cardHamb().querySelector('.menu-card-foto')); // tocar la foto suma uno
+  await clickEl(cardHamb().querySelector('.menu-qty [data-action="menu-mas"]')); // y el "+" otro
+  assert(text(cardHamb().querySelector('.qty-val')) === '2', 'tocar la foto y el + suma 2 unidades');
+  assert(text(cardHamb().querySelector('.menu-badge')) === '2' && cardHamb().classList.contains('en-carrito'), 'el cuadro marca que ya está en el carrito');
+  assert(text(q('#menu-ir-carrito')).includes('(2)') && mismoTexto(q('#menu-ir-carrito'), '56.000', '56,000'), 'el botón Ir al carrito muestra cantidad y total — ' + text(q('#menu-ir-carrito')));
+
+  await clickAction('menu-mas', 'p-papas');
+  await clickAction('menu-menos', 'p-papas');
+  assert(text(q('.menu-card[data-producto="p-papas"] .qty-val')) === '0', 'el – resta la unidad agregada');
+  assert(text(q('#menu-ir-carrito')).includes('(2)'), 'restar actualiza el total del carrito');
+
+  await clickAction('menu-categoria', 'cat-bebidas');
+  assert(qa('.menu-card').length === 4 && qa('.menu-cat').length === 1 && text(q('.menu-cat')).toLowerCase() === 'bebidas', 'el filtro de categoría muestra solo las 4 bebidas');
+  await clickAction('menu-categoria', 'todas');
+  const buscador = q('#menu-buscar-input');
+  buscador.value = 'paisa';
+  buscador.dispatchEvent(new window.Event('input', { bubbles: true }));
+  await esperar();
+  assert(qa('.menu-card').length === 2, 'buscar "paisa" deja 2 productos — ' + qa('.menu-card').length);
+  assert(document.activeElement && document.activeElement.id === 'menu-buscar-input', 'el buscador no pierde el foco al filtrar');
+  q('#menu-buscar-input').value = 'xyz';
+  q('#menu-buscar-input').dispatchEvent(new window.Event('input', { bubbles: true }));
+  await esperar();
+  assert(!!q('.menu-vacio'), 'una búsqueda sin resultados lo indica');
+  q('#menu-buscar-input').value = '';
+  q('#menu-buscar-input').dispatchEvent(new window.Event('input', { bubbles: true }));
+  await esperar();
+
+  await clickAction('menu-ir-carrito');
+  assert(!q('.menu-ov'), 'Ir al carrito cierra el menú');
+  assert(qa('.cart-item').length === 1, 'el carrito tiene la hamburguesa (las papas se quitaron)');
+  assert(text(q('.qty-val')) === '2', 'con cantidad 2');
   assert(mismoTexto(q('.cart-total'), '56.000', '56,000'), 'el subtotal del carrito es $56.000 — DOM: ' + text(q('.cart-total')));
+  await clickAction('abrir-menu');
+  assert(!!q('.menu-ov') && text(cardHamb().querySelector('.qty-val')) === '2', 'desde el carrito se vuelve al menú y conserva las cantidades');
+  await clickAction('cerrar-menu');
 
   await clickAction('carrito-obs-abrir', '0');
   assert(!!q('#obs-texto-input'), 'se abre el modal de observación');
@@ -209,9 +245,8 @@ function mismoTexto(el, ...variantes) { const t = text(el); return variantes.som
   await clickAction('switch-vista', 'mesero');
   await clickAction('mesero-tab', 'mesas');
   await clickAction('mesa-tap', 'mesa-3');
-  await clickAction('abrir-scanner');
-  await clickAction('scan-producto', 'p-plato-paisa');
-  await clickAction('cerrar-scanner');
+  await clickAction('menu-mas', 'p-plato-paisa');
+  await clickAction('menu-ir-carrito');
   await clickAction('enviar-pedido-confirmar-abrir');
   await clickAction('enviar-pedido-confirmar-si');
   await clickAction('confirmacion-volver-mesas');
@@ -238,9 +273,8 @@ function mismoTexto(el, ...variantes) { const t = text(el); return variantes.som
   await clickAction('switch-vista', 'mesero');
   await clickAction('mesero-tab', 'mesas');
   await clickAction('mesa-tap', 'mesa-4');
-  await clickAction('abrir-scanner');
-  await clickAction('scan-producto', 'p-gaseosa');
-  await clickAction('cerrar-scanner');
+  await clickAction('menu-mas', 'p-gaseosa');
+  await clickAction('menu-ir-carrito');
   await clickAction('enviar-pedido-confirmar-abrir');
   await clickAction('enviar-pedido-confirmar-si');
   await clickAction('confirmacion-volver-mesas');
@@ -269,13 +303,66 @@ function mismoTexto(el, ...variantes) { const t = text(el); return variantes.som
   await clickAction('producto-crear-guardar');
   assert(qa('table.data-table tbody tr').some(r => text(r).includes('Chuzo de Pollo')), 'el producto creado aparece en la tabla');
 
+  // --- fotos de productos ---
+  function elegirArchivo(input, archivo) {
+    Object.defineProperty(input, 'files', { value: [archivo], configurable: true });
+    input.dispatchEvent(new window.Event('change', { bubbles: true }));
+  }
+  const pngFalso = (nombre) => new window.File([new Uint8Array(2048)], nombre || 'foto.png', { type: 'image/png' });
+  assert(!q('[data-action="productos-imprimir-codigos"]'), 'ya no está el botón de imprimir códigos de barras');
+  const inputSencilla = q('input[data-subir-imagen="p-hamb-sen"]');
+  assert(!!inputSencilla, 'cada producto tiene botón para subir foto');
+  elegirArchivo(inputSencilla, pngFalso());
+  await esperar(30);
+  const rutasSencilla = () => Object.keys(backend.archivos).filter(r => r.indexOf('rest-fogon/p-hamb-sen-') === 0);
+  assert(rutasSencilla().length === 1, 'la foto se subió a la carpeta del restaurante — ' + JSON.stringify(Object.keys(backend.archivos)));
+  const prodSencilla = () => backend.db.productos.find(x => x.id === 'p-hamb-sen');
+  assert(prodSencilla().imagen_url === fake.URL_PUBLICA + rutasSencilla()[0], 'el producto quedó con la URL de su foto');
+  assert(backend.logStorage.filter(l => l.op === 'upload').every(l => l.cliente === 'admin'), 'las fotos se suben con la sesión de caja');
+  const filaSencilla = () => qa('table.data-table tbody tr').find(r => text(r).includes('Hamburguesa Sencilla'));
+  assert(!!filaSencilla().querySelector('img.prod-thumb'), 'la tabla muestra la miniatura de la foto');
+
+  const rutaVieja = rutasSencilla()[0];
+  await new Promise(r => setTimeout(r, 5)); // otro milisegundo => otro nombre de archivo
+  elegirArchivo(q('input[data-subir-imagen="p-hamb-sen"]'), pngFalso('nueva.png'));
+  await esperar(30);
+  assert(rutasSencilla().length === 1 && rutasSencilla()[0] !== rutaVieja, 'cambiar la foto reemplaza el archivo y borra el anterior');
+
+  const archivosAntes = Object.keys(backend.archivos).length;
+  elegirArchivo(q('input[data-subir-imagen="p-ensalada"]'), new window.File(['%PDF'], 'menu.pdf', { type: 'application/pdf' }));
+  await esperar(30);
+  assert(Object.keys(backend.archivos).length === archivosAntes && !backend.db.productos.find(x => x.id === 'p-ensalada').imagen_url, 'un archivo que no es imagen se rechaza');
+  assert(qa('.toast').some(t => text(t).includes('JPG, PNG o WebP')), 'y se explica por qué');
+  elegirArchivo(q('input[data-subir-imagen="p-ensalada"]'), new window.File([new Uint8Array(3 * 1024 * 1024)], 'grande.png', { type: 'image/png' }));
+  await esperar(30);
+  assert(!backend.db.productos.find(x => x.id === 'p-ensalada').imagen_url, 'una imagen de más de 2 MB que no se puede reducir se rechaza');
+
+  await clickEl(filaSencilla().querySelector('[data-action="producto-quitar-imagen"]'));
+  assert(prodSencilla().imagen_url === null && rutasSencilla().length === 0, 'Quitar borra la foto del producto y del almacenamiento');
+
+  await clickAction('producto-crear-abrir');
+  setVal('#prod-nombre-input', 'Bandeja Paisa');
+  setVal('#prod-precio-input', '35000');
+  Object.defineProperty(q('#prod-imagen-input'), 'files', { value: [pngFalso('bandeja.png')], configurable: true });
+  await clickAction('producto-crear-guardar');
+  await esperar(30);
+  const bandeja = backend.db.productos.find(x => x.nombre === 'Bandeja Paisa');
+  assert(!!bandeja && !!bandeja.imagen_url && bandeja.imagen_url.indexOf(fake.URL_PUBLICA + 'rest-fogon/' + bandeja.id + '-') === 0, 'al crear un producto se puede subir su foto de una vez');
+
+  // y el mesero la ve en el menú
+  elegirArchivo(q('input[data-subir-imagen="p-hamb-sen"]'), pngFalso('otra.png'));
+  await esperar(30);
+
   await clickAction('switch-vista', 'mesero');
   await clickAction('mesero-tab', 'mesas');
   await clickAction('mesa-tap', 'mesa-6');
-  await clickAction('abrir-scanner');
-  const cardCerveza = qa('.scan-card').find(c => text(c).includes('Cerveza'));
-  assert(!!cardCerveza && cardCerveza.hasAttribute('disabled'), 'la Cerveza aparece deshabilitada en el escáner');
-  await clickAction('cerrar-scanner');
+  const imgSencillaMenu = q('.menu-card[data-producto="p-hamb-sen"] img.menu-img');
+  assert(!!imgSencillaMenu && imgSencillaMenu.getAttribute('src') === backend.db.productos.find(x => x.id === 'p-hamb-sen').imagen_url, 'el mesero ve en el menú la foto que subió caja');
+  assert(!!q('.menu-card[data-producto="' + bandeja.id + '"] img.menu-img'), 'y el producto nuevo con su foto');
+  const cardCerveza = q('.menu-card[data-producto="p-cerveza"]');
+  assert(!!cardCerveza && cardCerveza.classList.contains('inactivo') && text(cardCerveza).includes('No disponible'), 'la Cerveza aparece como no disponible en el menú');
+  assert(cardCerveza.querySelector('.menu-qty [data-action="menu-mas"]').hasAttribute('disabled') && cardCerveza.querySelector('.menu-card-foto').hasAttribute('disabled'), 'y no se puede agregar');
+  await clickAction('cerrar-menu');
 
   // ============================================================
   // 8) Meseros: crear con PIN generado en el servidor y restablecer PIN

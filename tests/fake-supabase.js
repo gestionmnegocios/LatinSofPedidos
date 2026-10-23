@@ -9,6 +9,9 @@
 //   * admin (caja): todo lo demás.
 // Así, si la app usara la sesión equivocada para una acción, la prueba falla.
 
+const URL_PUBLICA = 'https://fake.supabase.co/storage/v1/object/public/productos/';
+const TIPOS_IMAGEN = ['image/jpeg', 'image/png', 'image/webp'];
+
 function hoyISO(offsetMin) { return new Date(Date.now() + (offsetMin || 0) * 60000).toISOString(); }
 
 function semilla() {
@@ -25,7 +28,8 @@ function semilla() {
     ['p-gaseosa', '770010', 'Gaseosa 400 ml', 'cat-bebidas', 5000],
     ['p-limonada', '770011', 'Limonada de Coco', 'cat-bebidas', 8500],
     ['p-jugo', '770012', 'Jugo en Leche', 'cat-bebidas', 7500],
-  ].map(([id, codigo, nombre, categoria_id, precio]) => ({ id, restaurante_id: 'rest-fogon', codigo, nombre, categoria_id, precio, estado: 'activo' }));
+  ].map(([id, codigo, nombre, categoria_id, precio]) => ({ id, restaurante_id: 'rest-fogon', codigo, nombre, categoria_id, precio, estado: 'activo', imagen_url: null }));
+  productos[0].imagen_url = URL_PUBLICA + 'rest-fogon/p-hamb-esp-1.jpg';
   const mesas = [];
   for (let i = 1; i <= 15; i++) mesas.push({ id: 'mesa-' + i, restaurante_id: 'rest-fogon', numero: i, pedido_activo_id: null });
   mesas[8].pedido_activo_id = null; // mesa 9: su pedido histórico ya está pagado
@@ -61,6 +65,8 @@ function crearBackend(pines) {
     // credenciales "del servidor": PIN de prueba + control de intentos
     credenciales: {},
     almacen: {}, // sesiones persistidas por storageKey (sobrevive a "recargar la página")
+    archivos: { 'rest-fogon/p-hamb-esp-1.jpg': { tipo: 'image/jpeg', tamano: 1000 } }, // bucket "productos"
+    logStorage: [],
     log: { from: [], selectMeseros: [], rpc: [], invoke: [] },
     sigConsecutivo: 125, sigPago: 2, sigToken: 1,
   };
@@ -230,6 +236,34 @@ function crearCliente(backend, nombre, storageKey) {
       },
       onAuthStateChange(f) { oyentes.push(f); return { data: { subscription: { unsubscribe() {} } } }; },
     },
+    // Storage: mismas reglas que las políticas del bucket "productos"
+    storage: {
+      from(bucket) {
+        const permitido = (ruta) => {
+          const yo = perfilDeSesion(backend, cliente.sesion);
+          return bucket === 'productos' && !!yo && yo.rol === 'admin' && String(ruta).split('/')[0] === yo.restaurante_id && String(ruta).split('/').length === 2;
+        };
+        return {
+          async upload(ruta, blob, opciones) {
+            backend.logStorage.push({ cliente: nombre, op: 'upload', ruta, tipo: opciones && opciones.contentType });
+            if (!permitido(ruta)) return { data: null, error: { statusCode: '403', message: 'new row violates row-level security policy' } };
+            const tipo = (opciones && opciones.contentType) || blob.type;
+            if (TIPOS_IMAGEN.indexOf(tipo) === -1) return { data: null, error: { statusCode: '415', message: 'mime type not supported' } };
+            if (blob.size > 2097152) return { data: null, error: { statusCode: '413', message: 'too large' } };
+            if (backend.archivos[ruta]) return { data: null, error: { statusCode: '409', message: 'Duplicate' } };
+            backend.archivos[ruta] = { tipo, tamano: blob.size };
+            return { data: { path: ruta }, error: null };
+          },
+          getPublicUrl(ruta) { return { data: { publicUrl: URL_PUBLICA + ruta } }; },
+          async remove(rutas) {
+            backend.logStorage.push({ cliente: nombre, op: 'remove', rutas });
+            const borradas = rutas.filter(r => permitido(r) && backend.archivos[r]);
+            borradas.forEach(r => { delete backend.archivos[r]; });
+            return { data: borradas.map(name => ({ name })), error: null };
+          },
+        };
+      },
+    },
     channel() { const ch = { on() { return ch; }, subscribe() { return ch; } }; return ch; },
     removeChannel() {},
   };
@@ -247,4 +281,4 @@ function instalar(backend) {
   };
 }
 
-module.exports = { crearBackend, instalar };
+module.exports = { crearBackend, instalar, URL_PUBLICA };

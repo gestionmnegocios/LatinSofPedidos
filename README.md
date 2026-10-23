@@ -3,11 +3,12 @@
 App de pedidos para restaurantes con dos interfaces en un solo `index.html`
 (HTML + CSS + JS, sin build):
 
-- **📱 App del mesero** — login con PIN, mapa de mesas, escaneo de productos,
-  carrito con observaciones, envío de pedidos y rondas, "Mis pedidos".
+- **📱 App del mesero** — login con PIN, mapa de mesas, menú táctil con foto,
+  nombre y precio de cada producto (+ / – para la cantidad), carrito con
+  observaciones, envío de pedidos y rondas, "Mis pedidos".
 - **🖥️ Panel de caja / administración** — kanban en tiempo real, mapa de
-  mesas, facturación (servicio, descuento, pago mixto), productos, meseros y
-  ventas del día.
+  mesas, facturación (servicio, descuento, pago mixto), productos (con su
+  foto), meseros y ventas del día.
 
 Publicada en Vercel (https://latinsofpedidos.vercel.app, se despliega sola al
 hacer push a `main`) sobre **Supabase** (Postgres + Auth + Realtime + Edge
@@ -43,6 +44,16 @@ Functions).
 La clave publicable que está en `index.html` es pública por diseño: sin una
 sesión obtenida con un PIN válido no da acceso a ningún dato.
 
+## Fotos de productos
+
+Se suben desde Caja → Productos ("📷 Subir" / "Cambiar" / "Quitar", o al crear
+el producto). El navegador reduce la foto a 800 px en JPEG antes de subirla y
+se guarda en el bucket público `productos` de Supabase Storage, en la carpeta
+del restaurante (`<restaurante_id>/<producto>-<fecha>.jpg`). Cualquiera con el
+enlace puede ver la foto (son fotos del menú); subir, cambiar o borrar solo lo
+puede caja de ese restaurante. Formatos: JPG, PNG o WebP; máximo 2 MB ya
+reducida.
+
 ## Estructura
 
 ```
@@ -51,7 +62,8 @@ sesión obtenida con un PIN válido no da acceso a ningún dato.
 ├── supabase/
 │   ├── migrations/                  # SQL aplicado en el proyecto de Supabase
 │   │   ├── …_auth_pin_fase1.sql     # PIN con hash, sesiones, RLS por rol (compatible con la versión anterior)
-│   │   └── …_auth_pin_fase2_cerrar_anon.sql  # quita el acceso anon y la columna meseros.pin
+│   │   ├── …_auth_pin_fase2_cerrar_anon.sql  # quita el acceso anon y la columna meseros.pin
+│   │   └── …_imagenes_productos.sql # productos.imagen_url + bucket "productos" con permisos de caja
 │   ├── functions/login-pin/         # Edge Function del login (index.ts + handler.ts, probable con node)
 │   └── tests/fase1_rls_rollback.sql # pruebas de RLS por rol dentro de una transacción que se revierte
 └── tests/

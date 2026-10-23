@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-<script src="https://unpkg.com/@zxing/library@0.23.0/umd/index.min.js"></script>
 <style>
 :root{
   box-sizing:border-box;
@@ -102,11 +101,9 @@ input,textarea,select{font-family:inherit;}
 .btn-sm{padding:5px 10px; font-size:12px; border-radius:var(--radius-s);}
 .btn-block{width:100%; display:block; text-align:center;}
 .btn[disabled]{opacity:.4; cursor:not-allowed; transform:none !important;}
-/* Botones que viven sobre fondo oscuro (topbar, cámara del escáner) */
-#app-topbar .btn-ghost, .scanner-head .btn-ghost{background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.25); color:#fff;}
-#app-topbar .btn-ghost:hover, .scanner-head .btn-ghost:hover{background:rgba(255,255,255,.16);}
-.scan-manual .btn-gold{background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.3); color:#fff;}
-.scan-manual .btn-gold:hover{background:rgba(255,255,255,.16);}
+/* Botones que viven sobre fondo oscuro (topbar) */
+#app-topbar .btn-ghost{background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.25); color:#fff;}
+#app-topbar .btn-ghost:hover{background:rgba(255,255,255,.16);}
 
 #app-main{flex:1; display:flex; justify-content:center; padding:22px 16px 60px;}
 .hidden{display:none !important;}
@@ -209,40 +206,45 @@ input,textarea,select{font-family:inherit;}
 .cart-total{font-weight:700; font-size:15px;}
 .sticky-actions{position:sticky; bottom:0; background:linear-gradient(to top, var(--cream-050) 70%, transparent); padding-top:14px; display:flex; flex-direction:column; gap:8px;}
 
-/* Escáner overlay */
+/* Capa a pantalla completa (confirmación de envío) */
 .scanner-ov{position:fixed; inset:0; background:#0C1824; color:#fff; display:flex; flex-direction:column; z-index:500;}
-.scanner-ov.hidden{display:none;}
-.scanner-video{position:absolute; inset:0; width:100%; height:100%; object-fit:cover; background:#000;}
-.viewfinder{z-index:1;}
-.viewfinder .vf-corner, .viewfinder .vf-laser, .viewfinder .vf-hint{z-index:2;}
-.scanner-aviso{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; padding:0 30px; font-size:13px; color:#C9D6E4; background:rgba(12,24,36,.88); z-index:3;}
-.torch-btn{position:absolute; top:10px; right:10px; z-index:4; width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,.3); background:rgba(0,0,0,.4); color:#fff; font-size:16px;}
-.torch-btn.on{background:var(--ember-500); color:#fff; border-color:var(--ember-500);}
-.scanner-head{display:flex; justify-content:space-between; align-items:center; padding:14px 16px; padding-top:calc(14px + env(safe-area-inset-top,0px));}
-.scanner-head h3{margin:0; font-size:15px; font-weight:700;}
-.viewfinder{margin:4px 22px 14px; aspect-ratio:4/3; position:relative; border-radius:18px; background:#0F2033; overflow:hidden; display:flex; align-items:center; justify-content:center;}
-.vf-corner{position:absolute; width:26px; height:26px; border-color:#fff; border-style:solid;}
-.vf-tl{top:14px; left:14px; border-width:3px 0 0 3px; border-radius:6px 0 0 0;}
-.vf-tr{top:14px; right:14px; border-width:3px 3px 0 0; border-radius:0 6px 0 0;}
-.vf-bl{bottom:14px; left:14px; border-width:0 0 3px 3px; border-radius:0 0 0 6px;}
-.vf-br{bottom:14px; right:14px; border-width:0 3px 3px 0; border-radius:0 0 6px 0;}
-.vf-laser{position:absolute; left:14px; right:14px; height:2px; background:var(--ember-500); box-shadow:0 0 8px 1px var(--ember-500); animation:laser 1.8s ease-in-out infinite;}
-@keyframes laser{0%,100%{top:18%;}50%{top:78%;}}
-.vf-hint{font-size:11.5px; color:#C9D6E4; z-index:2;}
-.vf-flash{position:absolute; inset:0; background:var(--verde-600); opacity:0; pointer-events:none;}
-.vf-flash.on{animation:flash .32s ease;}
-@keyframes flash{0%{opacity:.55;}100%{opacity:0;}}
-.scan-manual{display:flex; gap:7px; margin:0 22px 10px;}
-.scan-manual input{flex:1; background:#132235; border:1px solid #2C4F75; color:#fff; border-radius:var(--radius-m); padding:9px 11px; font-size:13px;}
-.scan-list{flex:1; overflow-y:auto; padding:4px 16px 18px; background:var(--cream-050); border-radius:20px 20px 0 0;}
-.scan-cat{font-size:11px; font-weight:700; letter-spacing:.3px; color:var(--ink-500); margin:14px 2px 7px;}
-.scan-grid{display:grid; grid-template-columns:1fr 1fr; gap:9px;}
-.scan-card{background:#fff; border:1px solid var(--cream-200); border-radius:var(--radius-m); padding:10px; text-align:left; color:var(--ink-900);}
-.scan-card .nm{font-size:12.5px; font-weight:600; line-height:1.25;}
-.scan-card .pr{font-size:11.5px; color:var(--ember-600); font-weight:700; margin-top:4px;}
-.scan-card .cd{font-size:9.5px; color:var(--ink-500); font-variant-numeric:tabular-nums;}
-.scan-card.added{border-color:var(--verde-600); background:var(--verde-100);}
-.scan-footer{padding:12px 20px calc(14px + env(safe-area-inset-bottom,0px)); background:var(--cream-050); display:flex; justify-content:space-between; align-items:center;}
+
+/* Menú táctil del mesero: capa dentro del teléfono */
+.menu-ov{position:absolute; inset:0; background:var(--cream-050); display:flex; flex-direction:column; z-index:60;}
+.menu-head{display:flex; align-items:center; gap:10px; padding:14px 16px 10px; background:var(--char-900); color:#fff;}
+.menu-head h3{margin:0; font-size:15px; font-weight:700; flex:1;}
+.menu-head .icon-btn{color:#fff; font-size:18px;}
+.menu-buscar{padding:10px 16px 0;}
+.menu-buscar input{width:100%; border:1px solid var(--cream-200); background:#fff; border-radius:var(--radius-m); padding:9px 11px; font-size:13.5px;}
+.menu-chips{display:flex; gap:7px; overflow-x:auto; padding:10px 16px 4px; -webkit-overflow-scrolling:touch;}
+.menu-chip{flex-shrink:0; border:1px solid var(--cream-200); background:#fff; color:var(--ink-700); border-radius:999px; padding:6px 13px; font-size:12.5px; font-weight:600;}
+.menu-chip.active{background:var(--ember-500); border-color:var(--ember-500); color:#fff;}
+.menu-lista{flex:1; overflow-y:auto; padding:4px 14px 16px; -webkit-overflow-scrolling:touch;}
+.menu-cat{font-size:11px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:var(--ink-500); margin:14px 2px 8px;}
+.menu-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+.menu-card{background:#fff; border:1.5px solid var(--cream-200); border-radius:var(--radius-l); overflow:hidden; display:flex; flex-direction:column;}
+.menu-card.en-carrito{border-color:var(--ember-500);}
+.menu-card.inactivo{opacity:.5;}
+.menu-card-foto{position:relative; display:block; width:100%; padding:0; border:none; background:#EEF2F7; aspect-ratio:4/3; cursor:pointer;}
+.menu-img{width:100%; height:100%; object-fit:cover; display:block;}
+.menu-img.sin-foto{display:flex; align-items:center; justify-content:center; font-size:22px; font-weight:800; color:var(--ink-500);}
+.menu-badge{position:absolute; top:6px; right:6px; min-width:24px; height:24px; padding:0 6px; border-radius:12px; background:var(--ember-500); color:#fff; font-size:12.5px; font-weight:800; display:flex; align-items:center; justify-content:center;}
+.menu-card-info{padding:8px 10px 2px;}
+.menu-card-info .nm{font-size:13px; font-weight:600; line-height:1.25;}
+.menu-card-info .pr{font-size:12.5px; color:var(--ember-600); font-weight:700; margin-top:3px;}
+.menu-qty{display:flex; align-items:center; justify-content:space-between; padding:6px 10px 10px;}
+.menu-qty .qty-btn{width:36px; height:36px; font-size:18px;}
+.menu-vacio{text-align:center; color:var(--ink-500); padding:40px 10px; font-size:13px;}
+.menu-footer{padding:10px 14px 14px; background:#fff; border-top:1px solid var(--cream-200);}
+.menu-footer .btn{display:flex; justify-content:space-between; align-items:center; gap:10px;}
+
+/* Foto de producto en el panel de caja */
+.prod-thumb{width:46px; height:46px; border-radius:8px; object-fit:cover; display:block; background:#EEF2F7;}
+.prod-thumb.sin-foto{display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:800; color:var(--ink-500);}
+.foto-cell{display:flex; align-items:center; gap:8px;}
+.foto-acciones{display:flex; flex-direction:column; gap:4px; align-items:flex-start;}
+.btn-archivo{position:relative; overflow:hidden; cursor:pointer;}
+.btn-archivo input[type=file]{position:absolute; inset:0; opacity:0; cursor:pointer; width:100%;}
 
 /* Mis pedidos / confirmacion */
 .mp-item{background:#fff; border:1px solid var(--cream-200); border-radius:var(--radius-m); padding:11px 13px; margin-bottom:9px;}
@@ -443,7 +445,6 @@ table.data-table tbody tr:hover{background:var(--cream-050);}
 
 <div id="toast-stack"></div>
 <div id="print-area"></div>
-<div id="scanner-persistente" class="scanner-ov hidden"></div>
 
 <script>
 (function(){
@@ -484,7 +485,7 @@ function mapRestaurante(r){
   if(!r) return {nombre:'Restaurante', nit:'', direccion:'', porcentajeServicio:10, pieComprobante:''};
   return { nombre:r.nombre, nit:r.nit, direccion:r.direccion, porcentajeServicio:r.porcentaje_servicio, pieComprobante:r.pie_comprobante };
 }
-function mapProducto(p){ return { id:p.id, codigo:p.codigo, nombre:p.nombre, idCategoria:p.categoria_id, precio:Number(p.precio), estado:p.estado }; }
+function mapProducto(p){ return { id:p.id, codigo:p.codigo, nombre:p.nombre, idCategoria:p.categoria_id, precio:Number(p.precio), estado:p.estado, imagenUrl:p.imagen_url||null }; }
 function mapMesero(m){ return { id:m.id, nombre:m.nombre, usuario:m.usuario, estado:m.estado, ultimoIngreso: m.ultimo_ingreso ? new Date(m.ultimo_ingreso).getTime() : null, rol: m.rol||'mesero' }; }
 function mapMesa(m){ return { id:m.id, numero:m.numero, idPedidoActivo:m.pedido_activo_id }; }
 function mapPago(p){ return { id:p.id, formaPago:p.forma_pago, valor:Number(p.valor), recibido: p.recibido!=null?Number(p.recibido):null, hora:new Date(p.hora).getTime() }; }
@@ -808,7 +809,80 @@ async function crearProducto({nombre,idCategoria,precio}){
   const codigo='77'+String(1000+Math.floor(Math.random()*9000));
   const id='p-'+Date.now();
   const {error}=await sb.from('productos').insert({id, restaurante_id:RESTAURANTE_ID, codigo, nombre, categoria_id:idCategoria, precio, estado:'activo'});
-  return error ? {ok:false,error} : {ok:true, codigo};
+  return error ? {ok:false,error} : {ok:true, id, codigo};
+}
+
+/* ---------- fotos de productos (Supabase Storage, bucket "productos") ----------
+   Lectura pública (se muestran con <img>); subir y borrar solo lo puede
+   caja, y solo dentro de la carpeta de su restaurante. */
+const BUCKET_IMAGENES='productos';
+const TIPOS_IMAGEN=['image/jpeg','image/png','image/webp'];
+const MAX_BYTES_IMAGEN=2*1024*1024;      // límite del bucket
+const MAX_BYTES_ORIGINAL=20*1024*1024;   // foto del celular antes de reducirla
+const LADO_MAX_IMAGEN=800;
+
+// Reduce la foto a 800 px de lado y JPEG para que cargue rápido en los
+// celulares de los meseros. Si el navegador no puede (sin canvas), sube el
+// archivo tal cual siempre que sea un tipo y tamaño permitidos.
+async function prepararImagen(file){
+  try{
+    if(typeof createImageBitmap!=='function') throw new Error('sin createImageBitmap');
+    const bmp=await createImageBitmap(file);
+    const escala=Math.min(1, LADO_MAX_IMAGEN/Math.max(bmp.width,bmp.height));
+    const canvas=document.createElement('canvas');
+    canvas.width=Math.max(1,Math.round(bmp.width*escala));
+    canvas.height=Math.max(1,Math.round(bmp.height*escala));
+    const ctx=canvas.getContext('2d');
+    if(!ctx) throw new Error('sin canvas');
+    ctx.drawImage(bmp,0,0,canvas.width,canvas.height);
+    const blob=await new Promise(function(res){ canvas.toBlob(res,'image/jpeg',0.82); });
+    if(blob) return {blob:blob, tipo:'image/jpeg', ext:'jpg'};
+  }catch(e){ /* seguimos con el archivo original */ }
+  if(TIPOS_IMAGEN.indexOf(file.type)===-1) return null;
+  return {blob:file, tipo:file.type, ext:file.type==='image/png'?'png':(file.type==='image/webp'?'webp':'jpg')};
+}
+function rutaDeUrlPublica(url){
+  const marca='/storage/v1/object/public/'+BUCKET_IMAGENES+'/';
+  const i=url?url.indexOf(marca):-1;
+  return i===-1 ? null : decodeURIComponent(url.slice(i+marca.length).split('?')[0]);
+}
+async function borrarArchivoImagen(db,url){
+  const ruta=rutaDeUrlPublica(url);
+  if(ruta) try{ await db.storage.from(BUCKET_IMAGENES).remove([ruta]); }catch(e){ /* queda huérfana, no afecta a la app */ }
+}
+async function subirImagenProducto(idProducto,file){
+  const db=clientes.admin;
+  if(!file) return {ok:false, motivo:'sin_archivo'};
+  if(!/^image\//.test(file.type||'')) return {ok:false, motivo:'tipo'};
+  if(file.size>MAX_BYTES_ORIGINAL) return {ok:false, motivo:'tamano'};
+  const prep=await prepararImagen(file);
+  if(!prep) return {ok:false, motivo:'tipo'};
+  if(prep.blob.size>MAX_BYTES_IMAGEN) return {ok:false, motivo:'tamano'};
+  const ruta=RESTAURANTE_ID+'/'+idProducto+'-'+Date.now()+'.'+prep.ext;
+  const subida=await db.storage.from(BUCKET_IMAGENES).upload(ruta, prep.blob, {contentType:prep.tipo, cacheControl:'31536000', upsert:false});
+  if(subida.error) return {ok:false, motivo:'error_db', error:subida.error};
+  const url=db.storage.from(BUCKET_IMAGENES).getPublicUrl(ruta).data.publicUrl;
+  const anterior=(getProducto(state,idProducto)||{}).imagenUrl;
+  const {data,error}=await db.from('productos').update({imagen_url:url}).eq('id',idProducto).select('id');
+  if(error || !data || !data.length){
+    await borrarArchivoImagen(db,url);
+    return {ok:false, motivo:'error_db', error:error};
+  }
+  if(anterior) borrarArchivoImagen(db,anterior); // no hace falta esperarlo
+  return {ok:true, url:url};
+}
+async function quitarImagenProducto(idProducto){
+  const db=clientes.admin;
+  const anterior=(getProducto(state,idProducto)||{}).imagenUrl;
+  const {data,error}=await db.from('productos').update({imagen_url:null}).eq('id',idProducto).select('id');
+  if(error || !data || !data.length) return {ok:false};
+  if(anterior) await borrarArchivoImagen(db,anterior);
+  return {ok:true};
+}
+function mensajeErrorImagen(r){
+  if(r.motivo==='tipo') return 'El archivo debe ser una imagen JPG, PNG o WebP.';
+  if(r.motivo==='tamano') return 'La imagen es demasiado grande. Usa una de menos de 2 MB.';
+  return 'Revisa tu conexión e intenta de nuevo.';
 }
 async function actualizarPrecioProducto(idProducto,precio){
   const {error}=await sb.from('productos').update({precio}).eq('id',idProducto);
@@ -843,7 +917,7 @@ let ui = {
   vista:'mesero',
   cargando:true,
   errorConexion:null,
-  mesero:{ logueado:null, pantalla:'mesas', mesaActiva:null, scannerAbierto:false,
+  mesero:{ logueado:null, pantalla:'mesas', mesaActiva:null, menuAbierto:false, menuCategoria:'todas', menuBusqueda:'',
            usuarioSel:null, pinInput:'', loginError:null, verificando:false, obsEditIndex:null, obsTexto:'',
            confirmando:false, confirmInfo:null, detalleMiPedido:null,
            turnoInicio:null },
@@ -1011,7 +1085,6 @@ function render(){
   renderMesero();
   renderAdmin();
   renderToasts();
-  sincronizarScanner();
   guardar();
 }
 
@@ -1067,6 +1140,7 @@ function renderMesero(){
   else contenido=pantallaMesas(mesero);
 
   let overlay='';
+  if(m.menuAbierto && m.mesaActiva && m.pantalla==='pedido') overlay=pantallaMenu();
   if(m.confirmando) overlay=pantallaConfirmacion();
 
   if(m.detalleMiPedido) modal=modalDetalleMiPedido();
@@ -1080,11 +1154,14 @@ function renderMesero(){
   const tabbar =
     '<div class="m-tabbar">'+
       tabBtn('mesas','🍽️','Mesas')+
-      tabBtn('escanear','📷','Escanear')+
+      tabBtn('menu','📋','Menú')+
       tabBtn('pedidos','🧾','Pedidos')+
       tabBtn('perfil','👤','Perfil')+
     '</div>';
 
+  // cada toque en + / – vuelve a pintar: se conserva por dónde iba la lista del menú
+  const listaPrevia=document.getElementById('menu-lista');
+  const scrollPrevio=listaPrevia?listaPrevia.scrollTop:0;
   root.innerHTML = phoneFrame(
     '<div class="phone-status"><span>'+horaCorta(Date.now())+'</span><span class="online">En línea</span></div>'+
     header+
@@ -1092,6 +1169,8 @@ function renderMesero(){
     tabbar+
     overlay+modal
   );
+  const lista=document.getElementById('menu-lista');
+  if(lista && listaPrevia) lista.scrollTop=scrollPrevio;
 
   function tabBtn(id,icon,label){
     return '<button class="m-tab'+(m.pantalla===id?' active':'')+'" data-action="mesero-tab" data-arg="'+id+'"><span class="ic">'+icon+'</span>'+label+'</button>';
@@ -1186,7 +1265,7 @@ function pantallaPedido(mesero){
 
   let carritoHtml='';
   if(carrito.items.length===0){
-    carritoHtml='<div class="carrito-empty"><div class="big">🛒</div>Carrito vacío<br><span style="font-size:11.5px">Escanea productos del menú para agregarlos</span></div>';
+    carritoHtml='<div class="carrito-empty"><div class="big">🛒</div>Carrito vacío<br><span style="font-size:11.5px">Toca “Agregar productos” para elegirlos del menú</span></div>';
   } else {
     carritoHtml = carrito.items.map(function(it,idx){
       return (
@@ -1224,7 +1303,7 @@ function pantallaPedido(mesero){
     carritoHtml+
     (carrito.items.length>0?('<div class="cart-summary"><span>Subtotal de esta ronda</span><span class="cart-total">'+money(subtotalDraft)+'</span></div>'):'')+
     '<div class="sticky-actions">'+
-      '<button class="btn btn-ghost btn-block" data-action="abrir-scanner">📷 Escanear productos</button>'+
+      '<button class="btn btn-ghost btn-block" data-action="abrir-menu">📋 Agregar productos</button>'+
       '<button class="btn btn-ember btn-block" data-action="enviar-pedido-confirmar-abrir" '+(puedeEnviar?'':'disabled')+'>Enviar pedido</button>'+
       (puedePedirCuenta?'<button class="btn btn-gold btn-block" data-action="pedir-cuenta">Pedir cuenta</button>':'')+
     '</div>'
@@ -1232,212 +1311,92 @@ function pantallaPedido(mesero){
 }
 
 /* ============================================================
-   ESCÁNER DE CÓDIGOS DE BARRAS (cámara real)
+   MENÚ TÁCTIL DEL MESERO
    ------------------------------------------------------------
-   Este bloque de markup se crea UNA sola vez cuando se abre el
-   escáner y se destruye al cerrarlo — a propósito NO se vuelve a
-   regenerar en cada render() mientras está abierto, porque eso
-   destruiría el <video> y cortaría la cámara. Los cambios
-   mientras está abierto (el contador del carrito, el flash de
-   "leído") se actualizan con manipulación directa del DOM, no
-   con innerHTML.
+   Reemplaza la lectura de códigos de barras con la cámara: el
+   mesero toca la foto o el "+" del producto para sumarlo al
+   carrito de la mesa, "–" para quitar uno, e "Ir al carrito"
+   para revisar y enviar el pedido.
    ============================================================ */
-function contenidoScannerHTML(){
-  const cats=state.categorias;
-  let grid='';
-  cats.forEach(function(cat){
-    const prods=state.productos.filter(function(p){return p.idCategoria===cat.id;});
-    grid += '<div class="scan-cat">'+esc(cat.nombre)+'</div><div class="scan-grid">'+
-      prods.map(function(p){
-        const inactivo = p.estado!=='activo';
-        return '<button class="scan-card" data-action="scan-producto" data-arg="'+p.id+'" '+(inactivo?'disabled':'')+'>'+
-          '<div class="nm">'+esc(p.nombre)+(inactivo?' <span style="color:var(--rojo-600)">· no disp.</span>':'')+'</div>'+
-          '<div class="pr">'+money(p.precio)+'</div>'+
-          '<div class="cd">#'+p.codigo+'</div>'+
-        '</button>';
-      }).join('') + '</div>';
-  });
+function cantidadEnCarrito(carrito,idProducto){
+  if(!carrito) return 0;
+  return carrito.items.filter(function(it){return it.idProducto===idProducto;}).reduce(function(a,it){return a+it.cantidad;},0);
+}
+function quitarUnoDelCarrito(s,idMesa,idProducto){
+  const carrito=s.carritos[idMesa]; if(!carrito) return;
+  // primero la línea sin observación; si solo hay líneas con observación, la última de ese producto
+  let idx=carrito.items.findIndex(function(it){return it.idProducto===idProducto && !it.observacion;});
+  if(idx===-1){ for(let i=carrito.items.length-1;i>=0;i--){ if(carrito.items[i].idProducto===idProducto){ idx=i; break; } } }
+  if(idx!==-1) cambiarCantidadCarrito(s,idMesa,idx,-1);
+}
+function urlImagenSegura(url){ return (typeof url==='string' && /^https:\/\//.test(url)) ? url : null; }
+function imagenProductoHTML(p,clase){
+  const url=urlImagenSegura(p.imagenUrl);
+  if(url) return '<img class="'+clase+'" src="'+esc(url)+'" alt="" loading="lazy">';
+  return '<div class="'+clase+' sin-foto">'+esc(iniciales(p.nombre))+'</div>';
+}
 
-  const carrito=state.carritos[ui.mesero.mesaActiva];
-  const nCarrito = carrito ? carrito.items.reduce(function(a,it){return a+it.cantidad;},0) : 0;
-
+function tarjetaMenu(p,carrito){
+  const n=cantidadEnCarrito(carrito,p.id);
+  const inactivo=p.estado!=='activo';
   return (
-    '<div class="scanner-head"><h3>Escanear menú</h3><button class="btn btn-ghost btn-sm" data-action="cerrar-scanner">Terminar</button></div>'+
-    '<div class="viewfinder">'+
-      '<video id="scanner-video" class="scanner-video" playsinline muted autoplay></video>'+
-      '<div class="vf-corner vf-tl"></div><div class="vf-corner vf-tr"></div><div class="vf-corner vf-bl"></div><div class="vf-corner vf-br"></div>'+
-      '<div class="vf-laser"></div>'+
-      '<div class="vf-flash" id="scanner-flash"></div>'+
-      '<span class="vf-hint" id="scanner-hint">Iniciando cámara…</span>'+
-      '<button class="torch-btn" id="scanner-torch-btn" data-action="scanner-toggle-torch" style="display:none">🔦</button>'+
-      '<div class="scanner-aviso" id="scanner-aviso" style="display:none"></div>'+
-    '</div>'+
-    '<div class="scan-manual"><input type="text" id="scan-manual-input" placeholder="Ingresar código manual" inputmode="numeric"><button class="btn btn-gold btn-sm" data-action="scan-manual-submit">Buscar</button></div>'+
-    '<div class="scan-list">'+grid+'</div>'+
-    '<div class="scan-footer"><span class="mut" id="scanner-contador" style="color:var(--ink-500); font-size:12px;">'+nCarrito+' producto(s) en el carrito</span><button class="btn btn-ember btn-sm" data-action="cerrar-scanner">Listo ✓</button></div>'
+    '<div class="menu-card'+(n>0?' en-carrito':'')+(inactivo?' inactivo':'')+'" data-producto="'+p.id+'">'+
+      '<button class="menu-card-foto" data-action="menu-mas" data-arg="'+p.id+'" '+(inactivo?'disabled':'')+' aria-label="Agregar '+esc(p.nombre)+'">'+
+        imagenProductoHTML(p,'menu-img')+
+        (n>0?'<span class="menu-badge">'+n+'</span>':'')+
+      '</button>'+
+      '<div class="menu-card-info"><div class="nm">'+esc(p.nombre)+'</div><div class="pr">'+(inactivo?'No disponible':money(p.precio))+'</div></div>'+
+      '<div class="menu-qty">'+
+        '<button class="qty-btn" data-action="menu-menos" data-arg="'+p.id+'" '+(n>0?'':'disabled')+' aria-label="Quitar uno">–</button>'+
+        '<span class="qty-val">'+n+'</span>'+
+        '<button class="qty-btn" data-action="menu-mas" data-arg="'+p.id+'" '+(inactivo?'disabled':'')+' aria-label="Agregar uno">+</button>'+
+      '</div>'+
+    '</div>'
   );
 }
 
-function scannerDebeMostrarse(){
-  return ui.vista==='mesero' && !!ui.mesero.logueado && !!ui.mesero.mesaActiva && !!ui.mesero.scannerAbierto;
-}
-
-function actualizarContadorScanner(){
-  const el=document.getElementById('scanner-contador');
-  if(!el) return;
-  const carrito=state.carritos[ui.mesero.mesaActiva];
-  const n = carrito ? carrito.items.reduce(function(a,it){return a+it.cantidad;},0) : 0;
-  el.textContent = n+' producto(s) en el carrito';
-}
-
-function flashScannerVisual(){
-  const el=document.getElementById('scanner-flash');
-  if(!el) return;
-  el.classList.add('on');
-  setTimeout(function(){ el.classList.remove('on'); }, 320);
-}
-
-function mostrarAvisoScanner(texto){
-  const el=document.getElementById('scanner-aviso');
-  const hint=document.getElementById('scanner-hint');
-  if(el){ el.textContent=texto; el.style.display='flex'; }
-  if(hint) hint.style.display='none';
-}
-function ocultarAvisoScanner(){
-  const el=document.getElementById('scanner-aviso');
-  const hint=document.getElementById('scanner-hint');
-  if(el) el.style.display='none';
-  if(hint){ hint.style.display=''; hint.textContent='Apunta al código de barras'; }
-}
-
-/* ---------- ciclo de vida de la cámara ---------- */
-let camaraStream=null, camaraIniciando=false, deteccionActiva=false, zxingControls=null, torchActivo=false;
-let ultimoCodigoLeido=null, ultimoCodigoLeidoEn=0;
-
-function detenerCamara(){
-  deteccionActiva=false;
-  torchActivo=false;
-  if(zxingControls){ try{ zxingControls.stop(); }catch(e){} zxingControls=null; }
-  if(camaraStream){ try{ camaraStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} camaraStream=null; }
-}
-
-async function iniciarCamara(){
-  if(camaraIniciando) return;
-  camaraIniciando=true;
-  ocultarAvisoScanner();
-  try{
-    if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-      mostrarAvisoScanner('Este navegador no permite usar la cámara aquí. Usa el código manual o toca el producto en la lista.');
-      camaraIniciando=false; return;
-    }
-    camaraStream = await navigator.mediaDevices.getUserMedia({ video:{ facingMode:{ ideal:'environment' } }, audio:false });
-    const video=document.getElementById('scanner-video');
-    if(!video){ detenerCamara(); camaraIniciando=false; return; } // el usuario cerró el escáner justo mientras cargaba
-    video.srcObject=camaraStream;
-    try{ await video.play(); }catch(e){}
-    configurarLinterna();
-    if(window.BarcodeDetector){ iniciarDeteccionNativa(); }
-    else if(window.ZXing){ iniciarDeteccionZXing(); }
-    else { mostrarAvisoScanner('Tu navegador no trae lector de códigos. Usa el código manual o toca el producto en la lista.'); }
-  }catch(err){
-    mostrarAvisoScanner('No se pudo usar la cámara (¿diste permiso?). Usa el código manual o toca el producto en la lista.');
-  }
-  camaraIniciando=false;
-}
-
-function configurarLinterna(){
-  const btn=document.getElementById('scanner-torch-btn');
-  if(!btn || !camaraStream) return;
-  const track=camaraStream.getVideoTracks()[0];
-  if(!track || typeof track.getCapabilities!=='function') return;
-  let caps={};
-  try{ caps=track.getCapabilities(); }catch(e){ return; }
-  if(caps && caps.torch) btn.style.display='flex';
-}
-
-async function alternarLinterna(){
-  if(!camaraStream) return;
-  const track=camaraStream.getVideoTracks()[0];
-  if(!track) return;
-  try{
-    torchActivo=!torchActivo;
-    await track.applyConstraints({ advanced:[{ torch:torchActivo }] });
-    const btn=document.getElementById('scanner-torch-btn');
-    if(btn) btn.classList.toggle('on', torchActivo);
-  }catch(e){ torchActivo=!torchActivo; /* no se pudo, revertimos el estado */ }
-}
-
-function iniciarDeteccionNativa(){
-  deteccionActiva=true;
-  const detector=new window.BarcodeDetector({ formats:['code_128'] });
-  async function loop(){
-    if(!deteccionActiva) return;
-    const video=document.getElementById('scanner-video');
-    if(video && video.readyState>=2){
-      try{
-        const codigos=await detector.detect(video);
-        if(codigos && codigos.length>0) manejarCodigoLeido(codigos[0].rawValue);
-      }catch(e){}
-    }
-    if(deteccionActiva) requestAnimationFrame(loop);
-  }
-  requestAnimationFrame(loop);
-}
-
-function iniciarDeteccionZXing(){
-  deteccionActiva=true;
-  try{
-    const hints=new Map();
-    hints.set(window.ZXing.DecodeHintType.POSSIBLE_FORMATS, [window.ZXing.BarcodeFormat.CODE_128]);
-    const reader=new window.ZXing.BrowserMultiFormatReader(hints);
-    reader.decodeFromVideoDevice(null, 'scanner-video', function(result){
-      if(result) manejarCodigoLeido(result.getText());
-    }).then(function(controls){ zxingControls=controls; }).catch(function(){
-      mostrarAvisoScanner('No se pudo iniciar el lector de códigos.');
-    });
-  }catch(e){
-    mostrarAvisoScanner('No se pudo iniciar el lector de códigos.');
-  }
-}
-
-function manejarCodigoLeido(codigo){
-  if(!codigo || !scannerDebeMostrarse()) return;
-  const ahora=Date.now();
-  // el mismo código leído dos veces en menos de 1.5s se ignora (evita dobles lecturas)
-  if(codigo===ultimoCodigoLeido && (ahora-ultimoCodigoLeidoEn)<1500) return;
-  ultimoCodigoLeido=codigo; ultimoCodigoLeidoEn=ahora;
-
+function pantallaMenu(){
   const m=ui.mesero;
-  const producto=state.productos.find(function(p){ return p.codigo===codigo; });
-  if(!producto){ vibrar(80); pushToast('❌ Producto no encontrado','Código: '+codigo); return; }
-  const r=agregarProductoAlCarrito(state, m.mesaActiva, m.logueado, producto.id);
-  if(r.ok){
-    vibrar(30);
-    flashScannerVisual();
-    actualizarContadorScanner();
-    pushToast('✅ Agregado', producto.nombre+' · '+money(producto.precio));
-    guardar();
-  } else if(r.motivo==='inactivo'){
-    pushToast('⚠️ No disponible','Este producto está inactivo en este momento.');
-  }
-}
+  const mesa=getMesa(state,m.mesaActiva);
+  const carrito=state.carritos[m.mesaActiva];
+  const filtro=m.menuCategoria||'todas';
+  const busqueda=(m.menuBusqueda||'').trim().toLowerCase();
 
-/* ---------- mostrar/ocultar el escáner (vive fuera de renderMesero) ---------- */
-function sincronizarScanner(){
-  const el=document.getElementById('scanner-persistente');
-  if(!el) return;
-  const debeMostrar=scannerDebeMostrarse();
-  const estaMostrado=!el.classList.contains('hidden');
-  if(debeMostrar && !estaMostrado){
-    el.classList.remove('hidden');
-    el.innerHTML=contenidoScannerHTML();
-    iniciarCamara();
-  } else if(!debeMostrar && estaMostrado){
-    detenerCamara();
-    el.classList.add('hidden');
-    el.innerHTML='';
-  }
-  // si ya estaba mostrado y sigue mostrado, no tocamos el innerHTML: ahí vive la cámara activa.
+  const grupos=state.categorias.map(function(c){return {id:c.id, nombre:c.nombre};});
+  const idsCat=grupos.map(function(g){return g.id;});
+  if(state.productos.some(function(p){return idsCat.indexOf(p.idCategoria)===-1;})) grupos.push({id:'__otros', nombre:'Otros'});
+
+  const chips=[{id:'todas', nombre:'Todo'}].concat(grupos).map(function(g){
+    return '<button class="menu-chip'+(filtro===g.id?' active':'')+'" data-action="menu-categoria" data-arg="'+g.id+'">'+esc(g.nombre)+'</button>';
+  }).join('');
+
+  let lista='';
+  grupos.forEach(function(g){
+    if(filtro!=='todas' && filtro!==g.id) return;
+    const prods=state.productos.filter(function(p){
+      const enGrupo = g.id==='__otros' ? idsCat.indexOf(p.idCategoria)===-1 : p.idCategoria===g.id;
+      return enGrupo && (!busqueda || p.nombre.toLowerCase().indexOf(busqueda)>-1);
+    });
+    if(!prods.length) return;
+    lista+='<div class="menu-cat">'+esc(g.nombre)+'</div><div class="menu-grid">'+prods.map(function(p){return tarjetaMenu(p,carrito);}).join('')+'</div>';
+  });
+  if(!lista) lista='<div class="menu-vacio">No hay productos'+(busqueda?' que coincidan con “'+esc(m.menuBusqueda.trim())+'”':' en esta categoría')+'.</div>';
+
+  const items=carrito?carrito.items:[];
+  const nItems=items.reduce(function(a,it){return a+it.cantidad;},0);
+  const total=items.reduce(function(a,it){return a+totalItem(it);},0);
+
+  return (
+    '<div class="menu-ov">'+
+      '<div class="menu-head"><button class="icon-btn" data-action="cerrar-menu" aria-label="Volver">←</button><h3>Menú · Mesa '+esc(String(mesa.numero))+'</h3></div>'+
+      '<div class="menu-buscar"><input type="search" id="menu-buscar-input" placeholder="Buscar producto…" value="'+esc(m.menuBusqueda||'')+'" autocomplete="off"></div>'+
+      '<div class="menu-chips">'+chips+'</div>'+
+      '<div class="menu-lista" id="menu-lista">'+lista+'</div>'+
+      '<div class="menu-footer"><button class="btn btn-ember btn-block" data-action="menu-ir-carrito" id="menu-ir-carrito">'+
+        '<span>🛒 Ir al carrito'+(nItems?' ('+nItems+')':'')+'</span><span>'+money(total)+'</span>'+
+      '</button></div>'+
+    '</div>'
+  );
 }
 
 function pantallaConfirmacion(){
@@ -1983,13 +1942,19 @@ function adminFacturacion(){
 function adminProductos(){
   const a=ui.admin;
   const q=(a.productosBusqueda||'').toLowerCase();
-  const list=state.productos.filter(function(p){ return !q || p.nombre.toLowerCase().indexOf(q)>-1 || p.codigo.indexOf(q)>-1; });
+  const list=state.productos.filter(function(p){ return !q || p.nombre.toLowerCase().indexOf(q)>-1; });
   const rows=list.map(function(p){
     const cat=state.categorias.find(function(c){return c.id===p.idCategoria;});
     const editando = a.productoEditPrecio===p.id;
     return (
       '<tr>'+
-        '<td class="num">'+p.codigo+'</td>'+
+        '<td><div class="foto-cell">'+imagenProductoHTML(p,'prod-thumb')+
+          '<div class="foto-acciones">'+
+            (a.subiendoImagen===p.id ? '<span class="mut" style="font-size:12px">Subiendo…</span>' :
+              '<label class="btn btn-ghost btn-sm btn-archivo">'+(p.imagenUrl?'Cambiar':'📷 Subir')+
+                '<input type="file" accept="image/jpeg,image/png,image/webp" data-subir-imagen="'+p.id+'" aria-label="Foto de '+esc(p.nombre)+'"></label>'+
+              (p.imagenUrl?'<button class="btn btn-ghost btn-sm" data-action="producto-quitar-imagen" data-arg="'+p.id+'">Quitar</button>':''))+
+          '</div></div></td>'+
         '<td>'+esc(p.nombre)+'</td>'+
         '<td>'+esc(cat?cat.nombre:'—')+'</td>'+
         '<td>'+(editando?('<div class="inline-edit"><input type="number" id="precio-edit-input" value="'+p.precio+'"><button class="btn btn-ember btn-sm" data-action="producto-guardar-precio" data-arg="'+p.id+'">OK</button></div>'):('<span class="num">'+money(p.precio)+'</span> <button class="icon-btn" data-action="producto-editar-precio" data-arg="'+p.id+'">✏️</button>'))+'</td>'+
@@ -2001,9 +1966,9 @@ function adminProductos(){
   return (
     '<div class="admin-topline"><div><h2>Productos</h2><div class="mut">'+state.productos.length+' productos en el catálogo</div></div>'+
       '<button class="btn btn-ember btn-sm" data-action="producto-crear-abrir">+ Nuevo producto</button></div>'+
-    '<div class="filtro-row"><input class="search-box" placeholder="Buscar por nombre o código..." id="productos-busqueda-input" value="'+esc(a.productosBusqueda||'')+'" oninput="window.__filtrarProductos(this.value)">'+
-      '<button class="btn btn-ghost btn-sm" data-action="productos-imprimir-codigos" style="margin-left:auto">🖨️ Imprimir códigos</button></div>'+
-    '<table class="data-table"><thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Estado</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
+    '<div class="filtro-row"><input class="search-box" placeholder="Buscar por nombre..." id="productos-busqueda-input" value="'+esc(a.productosBusqueda||'')+'" oninput="window.__filtrarProductos(this.value)">'+
+      '<span class="mut" style="margin-left:auto; font-size:12px;">La foto es la que ven los meseros en el menú. JPG, PNG o WebP.</span></div>'+
+    '<table class="data-table"><thead><tr><th>Foto</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Estado</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
   );
 }
 
@@ -2013,10 +1978,11 @@ function modalProductoCrear(){
     '<div class="admin-modal-backdrop">'+
       '<div class="admin-modal">'+
         '<h3>Nuevo producto</h3>'+
-        '<div class="mut">El código de barras se genera automáticamente.</div>'+
+        '<div class="mut">Aparecerá en el menú de los meseros.</div>'+
         '<div class="form-row"><label>Nombre</label><input type="text" id="prod-nombre-input" placeholder="Ej: Chuzo de pollo"></div>'+
         '<div class="form-row"><label>Categoría</label><select id="prod-cat-input">'+cats+'</select></div>'+
         '<div class="form-row"><label>Precio (COP)</label><input type="number" id="prod-precio-input" min="0" step="500" placeholder="15000"></div>'+
+        '<div class="form-row"><label>Foto (opcional)</label><input type="file" id="prod-imagen-input" accept="image/jpeg,image/png,image/webp"></div>'+
         '<div class="modal-actions"><button class="btn btn-ghost" data-action="producto-crear-cancelar">Cancelar</button><button class="btn btn-ember" data-action="producto-crear-guardar">Crear producto</button></div>'+
       '</div>'+
     '</div>'
@@ -2264,49 +2230,38 @@ async function manejarAccion(actionEl){
 
     /* ---- navegación mesero ---- */
     case 'mesero-tab':
-      if(arg==='escanear'){
-        if(!m.mesaActiva){ pushToast('Selecciona una mesa','Primero toca una mesa para empezar a escanear.'); m.pantalla='mesas'; }
-        else { m.pantalla='pedido'; m.scannerAbierto=true; }
-      } else { m.pantalla=arg; }
+      if(arg==='menu'){
+        if(!m.mesaActiva){ pushToast('Selecciona una mesa','Primero toca una mesa para agregarle productos.'); m.pantalla='mesas'; }
+        else { m.pantalla='pedido'; m.menuAbierto=true; }
+      } else { m.pantalla=arg; m.menuAbierto=false; }
       break;
     case 'mesero-logout': await cerrarSesion('mesero'); necesitaResync=true; break;
-    case 'mesa-tap': m.mesaActiva=arg; m.pantalla='pedido'; break;
-    case 'volver-mesas': m.pantalla='mesas'; m.mesaActiva=null; break;
+    case 'mesa-tap': {
+      m.mesaActiva=arg; m.pantalla='pedido';
+      // mesa libre y con el carrito vacío: directo al menú
+      const mesaTocada=getMesa(state,arg); const carritoMesa=state.carritos[arg];
+      m.menuAbierto = !!mesaTocada && !mesaTocada.idPedidoActivo && !(carritoMesa && carritoMesa.items.length);
+      m.menuBusqueda=''; m.menuCategoria='todas';
+      break;
+    }
+    case 'volver-mesas': m.pantalla='mesas'; m.mesaActiva=null; m.menuAbierto=false; break;
 
-    /* ---- escáner ---- */
-    case 'abrir-scanner': m.scannerAbierto=true; break;
-    case 'cerrar-scanner': m.scannerAbierto=false; break;
-    case 'scanner-toggle-torch': alternarLinterna(); return; // no toca el resto del render
-    case 'scan-producto': {
-      // Toque manual sobre la lista (respaldo si la cámara no lee o no hay permiso).
-      // No usa manejarCodigoLeido() porque aquí ya sabemos el producto exacto (por
-      // id, no por código leído) y no aplica el debounce de 1.5s de la cámara.
+    /* ---- menú táctil ---- */
+    case 'abrir-menu': m.menuAbierto=true; break;
+    case 'cerrar-menu':
+    case 'menu-ir-carrito': m.menuAbierto=false; break;
+    case 'menu-categoria': {
+      m.menuCategoria=arg;
+      const l=document.getElementById('menu-lista'); if(l) l.scrollTop=0;
+      break;
+    }
+    case 'menu-mas': {
       const r=agregarProductoAlCarrito(state,m.mesaActiva,m.logueado,arg);
-      if(r.ok){
-        const prod=getProducto(state,arg);
-        vibrar(30);
-        flashScannerVisual();
-        actualizarContadorScanner();
-        pushToast('✅ Agregado', prod.nombre+' · '+money(prod.precio));
-      } else if(r.motivo==='inactivo'){
-        pushToast('⚠️ No disponible','Este producto está inactivo en este momento.');
-      } else {
-        pushToast('❌ Producto no encontrado','Verifica el código e intenta de nuevo.');
-      }
-      guardar(); // el carrito cambió aunque no re-renderizamos todo
-      return;
+      if(r.ok) vibrar(20);
+      else if(r.motivo==='inactivo') pushToast('⚠️ No disponible','Este producto está inactivo en este momento.');
+      break;
     }
-    case 'scan-manual-submit': {
-      const input=document.getElementById('scan-manual-input');
-      const codigo=input?input.value.trim():'';
-      if(!codigo) return;
-      const prod=state.productos.find(function(p){return p.codigo===codigo;});
-      if(!prod){ pushToast('❌ Producto no encontrado','No existe un producto con ese código.'); return; }
-      const r=agregarProductoAlCarrito(state,m.mesaActiva,m.logueado,prod.id);
-      if(r.ok){ vibrar(30); flashScannerVisual(); actualizarContadorScanner(); pushToast('✅ Agregado', prod.nombre+' · '+money(prod.precio)); if(input) input.value=''; guardar(); }
-      else if(r.motivo==='inactivo'){ pushToast('⚠️ No disponible','Este producto está inactivo en este momento.'); }
-      return;
-    }
+    case 'menu-menos': quitarUnoDelCarrito(state,m.mesaActiva,arg); break;
 
     /* ---- carrito ---- */
     case 'carrito-qty': {
@@ -2502,9 +2457,19 @@ async function manejarAccion(actionEl){
       const cat=(document.getElementById('prod-cat-input')||{}).value||state.categorias[0].id;
       const precio=parseFloat((document.getElementById('prod-precio-input')||{}).value||'0');
       if(!nombre.trim() || !(precio>0)){ pushToast('⚠️ Datos incompletos','Ingresa nombre y precio válidos.'); break; }
+      const archivoEl=document.getElementById('prod-imagen-input');
+      const archivo=archivoEl&&archivoEl.files&&archivoEl.files[0];
       const r = await crearProducto({nombre:nombre.trim(), idCategoria:cat, precio:Math.round(precio)});
       a.productoCrear=false;
-      if(r.ok){ necesitaResync=true; pushToast('✅ Producto creado', nombre.trim()+' · código '+r.codigo); }
+      if(r.ok){
+        necesitaResync=true;
+        pushToast('✅ Producto creado', nombre.trim()+' · '+money(Math.round(precio)));
+        if(archivo){
+          await syncFromSupabase(); // para que el producto nuevo exista en el estado local
+          const ri=await subirImagenProducto(r.id, archivo);
+          if(!ri.ok) pushToast('⚠️ Producto creado sin foto', mensajeErrorImagen(ri));
+        }
+      }
       else pushToast('⚠️ No se pudo crear','Revisa tu conexión e intenta de nuevo.');
       break;
     }
@@ -2526,12 +2491,9 @@ async function manejarAccion(actionEl){
       if(r.ok) necesitaResync=true; else pushToast('⚠️ No se pudo guardar','Revisa tu conexión e intenta de nuevo.');
       break;
     }
-    case 'productos-imprimir-codigos': {
-      const filasProductos = state.productos.map(function(p){ return cpRow(esc(p.nombre), '#'+p.codigo+' · '+money(p.precio)); }).join('');
-      const html='<div class="comprobante-paper" style="max-width:420px"><div class="cp-center"><b>Etiquetas de código — '+esc(state.restaurante.nombre)+'</b></div><hr>'+
-        cpTabla(filasProductos)+
-        '</div>';
-      imprimir(html);
+    case 'producto-quitar-imagen': {
+      const r = await quitarImagenProducto(arg);
+      if(r.ok) necesitaResync=true; else pushToast('⚠️ No se pudo quitar la foto','Revisa tu conexión e intenta de nuevo.');
       break;
     }
 
@@ -2646,6 +2608,37 @@ window.__filtrarProductos=function(val){
     if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
   },0);
 };
+
+/* buscador del menú táctil: filtra mientras se escribe sin perder el foco */
+document.addEventListener('input', function(e){
+  if(!e.target || e.target.id!=='menu-buscar-input') return;
+  ui.mesero.menuBusqueda=e.target.value;
+  renderMesero();
+  const el=document.getElementById('menu-buscar-input');
+  if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(err){} }
+});
+
+/* elegir foto de un producto (panel de caja) */
+document.addEventListener('change', function(e){
+  const input=e.target;
+  if(!input || !input.getAttribute || !input.hasAttribute('data-subir-imagen')) return;
+  const idProducto=input.getAttribute('data-subir-imagen');
+  const archivo=input.files && input.files[0];
+  input.value='';
+  if(!archivo) return;
+  ui.admin.subiendoImagen=idProducto;
+  render();
+  subirImagenProducto(idProducto, archivo).then(async function(r){
+    ui.admin.subiendoImagen=null;
+    if(r.ok){ pushToast('🖼️ Foto guardada','Ya aparece en el menú de los meseros.'); await syncFromSupabase(); }
+    else pushToast('⚠️ No se pudo subir la foto', mensajeErrorImagen(r));
+    render();
+  }).catch(function(){
+    ui.admin.subiendoImagen=null;
+    pushToast('⚠️ No se pudo subir la foto','Revisa tu conexión e intenta de nuevo.');
+    render();
+  });
+});
 
 /* delegación de eventos */
 document.addEventListener('click', function(e){
