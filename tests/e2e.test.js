@@ -32,6 +32,8 @@ function abrirPagina(backend, antesDeCargar) {
     virtualConsole: vc,
     beforeParse(window) {
       window.supabase = fake.instalar(backend);
+      window.__impresiones = 0;
+      window.print = function () { window.__impresiones++; };
       if (antesDeCargar) antesDeCargar(window);
     },
   });
@@ -214,6 +216,66 @@ function mismoTexto(el, ...variantes) { const t = text(el); return variantes.som
     if (btn) await clickEl(btn);
     assert(backend.db.rondas.find(r => r.id === idRondaMesa1).estado === esperado, 'la ronda quedó en ' + esperado);
   }
+
+  // ============================================================
+  // 3b) Comandas separadas: cocina y bar
+  // ============================================================
+  await clickAction('switch-vista', 'mesero');
+  await clickAction('mesero-tab', 'mesas');
+  await clickAction('mesa-tap', 'mesa-10');
+  assert(!qa('.menu-chip').some(c => text(c) === 'Licores'), 'el menú no muestra la categoría Licores mientras no tenga productos');
+  await clickAction('menu-mas', 'p-hamb-sen');
+  await clickAction('menu-mas', 'p-papas');
+  await clickAction('menu-mas', 'p-cerveza');
+  await clickAction('menu-mas', 'p-cerveza');
+  await clickAction('menu-ir-carrito');
+  await clickAction('enviar-pedido-confirmar-abrir');
+  await clickAction('enviar-pedido-confirmar-si');
+  await clickAction('confirmacion-volver-mesas');
+
+  await clickAction('switch-vista', 'admin');
+  const kcardMesa10 = qa('.kcard').find(c => text(c).includes('Mesa 10'));
+  const argRonda10 = kcardMesa10.querySelector('[data-action="ronda-detalle-abrir"]').getAttribute('data-arg');
+  await clickAction('ronda-detalle-abrir', argRonda10);
+  const titulosEst = qa('.admin-modal .estacion-titulo').map(text);
+  assert(titulosEst.length === 2 && titulosEst[0].includes('COCINA') && titulosEst[1].includes('BAR'), 'el detalle agrupa los ítems en Cocina y Bar — ' + titulosEst.join(' | '));
+  const impresionesAntes = window.__impresiones;
+  await clickAction('comanda-imprimir', argRonda10);
+  await new Promise(r => setTimeout(r, 80)); // imprimir() espera 60 ms antes de abrir el diálogo
+  const papeles = qa('#print-area .comprobante-paper');
+  assert(papeles.length === 2, 'se generan 2 comandas (cocina y bar) — ' + papeles.length);
+  assert(window.__impresiones === impresionesAntes + 1, 'en un solo envío a la impresora');
+  assert(!!q('#print-area .comanda-corte'), 'con corte de página entre las dos');
+  const cocina = papeles.find(x => x.getAttribute('data-estacion') === 'cocina');
+  const bar = papeles.find(x => x.getAttribute('data-estacion') === 'bar');
+  assert(!!cocina && text(cocina).includes('COMANDA COCINA') && text(cocina).includes('Hamburguesa Sencilla') && text(cocina).includes('Papas') && !text(cocina).includes('Cerveza'), 'la de cocina lleva solo comidas — ' + text(cocina));
+  assert(!!bar && text(bar).includes('COMANDA BAR') && text(bar).includes('2x Cerveza Nacional') && !text(bar).includes('Hamburguesa'), 'la de bar lleva solo bebidas — ' + text(bar));
+  assert(text(cocina).includes('Mesa 10') && text(bar).includes('Mesa 10'), 'las dos indican la mesa');
+  await clickAction('comanda-imprimir', argRonda10 + ',bar');
+  await new Promise(r => setTimeout(r, 80));
+  assert(qa('#print-area .comprobante-paper').length === 1 && text(q('#print-area')).includes('COMANDA BAR'), 'se puede imprimir solo la comanda de bar');
+
+  // cambiar la estación de una categoría desde Productos
+  await clickAction('ronda-detalle-cerrar');
+  await clickAction('admin-nav', 'productos');
+  const selAcomp = q('select[data-estacion-categoria="cat-acomp"]');
+  assert(!!selAcomp && selAcomp.value === 'cocina', 'Productos muestra a qué comanda va cada categoría');
+  selAcomp.value = 'bar';
+  selAcomp.dispatchEvent(new window.Event('change', { bubbles: true }));
+  await esperar(20);
+  assert(backend.db.categorias.find(c => c.id === 'cat-acomp').estacion === 'bar', 'caja cambia Acompañamientos a la comanda de bar');
+  await clickAction('admin-nav', 'dashboard');
+  await clickAction('ronda-detalle-abrir', argRonda10);
+  await clickAction('comanda-imprimir', argRonda10 + ',bar');
+  await new Promise(r => setTimeout(r, 80));
+  assert(text(q('#print-area')).includes('Papas'), 'desde ese momento las papas salen en la comanda de bar');
+  await clickAction('ronda-detalle-cerrar');
+  backend.db.categorias.find(c => c.id === 'cat-acomp').estacion = 'cocina';
+  // se anula para no afectar el resto del recorrido
+  await clickAction('ronda-detalle-abrir', argRonda10);
+  await clickAction('ronda-anular-abrir', argRonda10);
+  await clickAction('ronda-anular-confirmar');
+  await clickAction('admin-nav', 'dashboard');
 
   // ============================================================
   // 4) El mesero pide la cuenta y caja cobra (pagos solo con sesión de caja)

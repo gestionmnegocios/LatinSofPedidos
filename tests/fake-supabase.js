@@ -36,9 +36,10 @@ function semilla() {
   return {
     restaurantes: [{ id: 'rest-fogon', nombre: 'El Fogón de Prueba', nit: '900.000.000-1', direccion: 'Calle 1 # 2-3', porcentaje_servicio: 10, pie_comprobante: 'Gracias' }],
     categorias: [
-      { id: 'cat-comidas', restaurante_id: 'rest-fogon', nombre: 'Comidas', orden: 1 },
-      { id: 'cat-bebidas', restaurante_id: 'rest-fogon', nombre: 'Bebidas', orden: 2 },
-      { id: 'cat-acomp', restaurante_id: 'rest-fogon', nombre: 'Acompañamientos', orden: 3 },
+      { id: 'cat-comidas', restaurante_id: 'rest-fogon', nombre: 'Comidas', orden: 1, estacion: 'cocina' },
+      { id: 'cat-bebidas', restaurante_id: 'rest-fogon', nombre: 'Bebidas', orden: 2, estacion: 'bar' },
+      { id: 'cat-acomp', restaurante_id: 'rest-fogon', nombre: 'Acompañamientos', orden: 3, estacion: 'cocina' },
+      { id: 'cat-licores', restaurante_id: 'rest-fogon', nombre: 'Licores', orden: 4, estacion: 'bar' },
     ],
     productos,
     meseros: [
@@ -140,7 +141,9 @@ class Consulta {
     }
 
     if (this.op === 'update') {
-      if (['productos', 'meseros'].indexOf(t) !== -1 && !admin) return { data: this.devolver ? [] : null, error: null }; // RLS: 0 filas
+      if (['productos', 'meseros', 'categorias'].indexOf(t) !== -1 && !admin) return { data: this.devolver ? [] : null, error: null }; // RLS: 0 filas
+      if (t === 'categorias' && Object.keys(this.valor).some(k => k !== 'estacion')) return err('42501', 'permission denied for column');
+      if (t === 'categorias' && ['cocina', 'bar'].indexOf(this.valor.estacion) === -1) return err('23514', 'categorias_estacion_valida');
       const objetivo = filas.filter(f => this.coincide(f));
       if (!admin && t === 'pedidos') {
         const v = this.valor;

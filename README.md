@@ -44,6 +44,16 @@ Functions).
 La clave publicable que está en `index.html` es pública por diseño: sin una
 sesión obtenida con un PIN válido no da acceso a ningún dato.
 
+## Comandas de cocina y bar
+
+Cada categoría va a una estación: 🍳 **Cocina** o 🍹 **Bar** (columna
+`categorias.estacion`; se cambia en Caja → Productos). En el detalle de una
+ronda, "Imprimir comandas" genera una comanda de cocina con las comidas y
+otra de bar con bebidas y licores, con salto de página entre ellas; también
+se puede imprimir solo una. Si la ronda trae solo comida (o solo bebidas),
+sale una sola comanda. Por defecto: Comidas y Acompañamientos → Cocina;
+Bebidas y Licores → Bar.
+
 ## Cambio de mesa
 
 Desde la mesa (app del mesero) o desde su panel en Caja → Mesas, "🔀 Cambiar
@@ -74,7 +84,8 @@ reducida.
 │   │   ├── …_auth_pin_fase1.sql     # PIN con hash, sesiones, RLS por rol (compatible con la versión anterior)
 │   │   ├── …_auth_pin_fase2_cerrar_anon.sql  # quita el acceso anon y la columna meseros.pin
 │   │   ├── …_imagenes_productos.sql # productos.imagen_url + bucket "productos" con permisos de caja
-│   │   └── …_cambiar_mesa.sql       # función cambiar_mesa (traslado atómico del pedido)
+│   │   ├── …_cambiar_mesa.sql       # función cambiar_mesa (traslado atómico del pedido)
+│   │   └── …_estaciones_comanda.sql # categorias.estacion (cocina/bar) + categoría Licores
 │   ├── functions/login-pin/         # Edge Function del login (index.ts + handler.ts, probable con node)
 │   └── tests/fase1_rls_rollback.sql # pruebas de RLS por rol dentro de una transacción que se revierte
 └── tests/

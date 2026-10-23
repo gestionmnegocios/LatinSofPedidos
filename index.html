@@ -238,6 +238,12 @@ input,textarea,select{font-family:inherit;}
 .menu-footer{padding:10px 14px 14px; background:#fff; border-top:1px solid var(--cream-200);}
 .menu-footer .btn{display:flex; justify-content:space-between; align-items:center; gap:10px;}
 
+/* Comandas por estación */
+.comanda-corte{break-after:page; page-break-after:always; height:24px;}
+.estacion-titulo{font-size:11px; font-weight:800; letter-spacing:.3px; color:var(--ink-500); margin:12px 0 4px;}
+.estaciones-row{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin:0 0 14px; font-size:12.5px;}
+.estaciones-row select{border:1px solid var(--cream-200); border-radius:var(--radius-s); padding:4px 6px; font-size:12.5px; background:#fff;}
+
 /* Cambio de mesa: cuadrícula de mesas libres */
 .mesa-elegir-grid{display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin:6px 0 4px;}
 .mesa-elegir{aspect-ratio:1; border-radius:50%; border:1.5px solid var(--cream-200); background:#fff; font-weight:800; font-size:15px; color:var(--ink-900);}
@@ -1398,8 +1404,10 @@ function pantallaMenu(){
   const filtro=m.menuCategoria||'todas';
   const busqueda=(m.menuBusqueda||'').trim().toLowerCase();
 
-  const grupos=state.categorias.map(function(c){return {id:c.id, nombre:c.nombre};});
-  const idsCat=grupos.map(function(g){return g.id;});
+  const idsCat=state.categorias.map(function(c){return c.id;});
+  const grupos=state.categorias
+    .filter(function(c){ return state.productos.some(function(p){return p.idCategoria===c.id;}); }) // sin chips de categorías vacías
+    .map(function(c){return {id:c.id, nombre:c.nombre};});
   if(state.productos.some(function(p){return idsCat.indexOf(p.idCategoria)===-1;})) grupos.push({id:'__otros', nombre:'Otros'});
 
   const chips=[{id:'todas', nombre:'Todo'}].concat(grupos).map(function(g){
@@ -1866,9 +1874,18 @@ function modalDetallePedido(){
   const ronda=pedido.rondas.find(function(r){return r.id===info.idRonda;});
   const mesa=getMesa(state,pedido.idMesa);
   const mesero=getMesero(state,ronda.idMesero);
-  const items=ronda.items.map(function(it){
-    return '<div class="line-item"><span>'+it.cantidad+' × '+esc(it.nombre)+(it.observacion?' <i style="color:var(--ember-600)">('+esc(it.observacion)+')</i>':'')+'</span><span>'+money(totalItem(it))+'</span></div>';
+  const grupos=itemsPorEstacion(ronda.items);
+  const estacionesConItems=ORDEN_ESTACIONES.filter(function(e){return grupos[e].length>0;});
+  const items=estacionesConItems.map(function(e){
+    return '<div class="estacion-titulo">'+ESTACIONES[e].icono+' '+ESTACIONES[e].nombre.toUpperCase()+'</div>'+
+      grupos[e].map(function(it){
+        return '<div class="line-item"><span>'+it.cantidad+' × '+esc(it.nombre)+(it.observacion?' <i style="color:var(--ember-600)">('+esc(it.observacion)+')</i>':'')+'</span><span>'+money(totalItem(it))+'</span></div>';
+      }).join('');
   }).join('');
+  const botonesComanda = estacionesConItems.length>1
+    ? '<button class="btn btn-ghost btn-sm" data-action="comanda-imprimir" data-arg="'+pedido.id+','+ronda.id+'">🖨️ Imprimir comandas (cocina y bar)</button>'+
+      estacionesConItems.map(function(e){ return '<button class="btn btn-ghost btn-sm" data-action="comanda-imprimir" data-arg="'+pedido.id+','+ronda.id+','+e+'">'+ESTACIONES[e].icono+' Solo '+ESTACIONES[e].nombre.toLowerCase()+'</button>'; }).join('')
+    : (estacionesConItems.length===1 ? '<button class="btn btn-ghost btn-sm" data-action="comanda-imprimir" data-arg="'+pedido.id+','+ronda.id+'">🖨️ Imprimir comanda de '+ESTACIONES[estacionesConItems[0]].nombre.toLowerCase()+'</button>' : '');
   const hist = ronda.historial.map(function(h){
     const u = h.usuario==='u-admin'?'Administración':(getMesero(state,h.usuario)?getMesero(state,h.usuario).nombre:h.usuario);
     return '<li><span>'+ETIQUETA_ESTADO[h.a]+(h.motivo?' — '+esc(h.motivo):'')+'</span><span>'+horaCorta(h.hora)+' · '+esc(u)+'</span></li>';
@@ -1886,7 +1903,7 @@ function modalDetallePedido(){
         '<div class="modal-actions" style="justify-content:flex-start; flex-wrap:wrap; margin-top:16px;">'+
           (sig?'<button class="btn btn-success btn-sm" data-action="ronda-avanzar" data-arg="'+pedido.id+','+ronda.id+'">Pasar a '+ETIQUETA_ESTADO[sig]+'</button>':'')+
           (puedeAnular?'<button class="btn btn-danger btn-sm" data-action="ronda-anular-abrir" data-arg="'+pedido.id+','+ronda.id+'">Anular</button>':'')+
-          '<button class="btn btn-ghost btn-sm" data-action="comanda-imprimir" data-arg="'+pedido.id+','+ronda.id+'">🖨️ Imprimir comanda</button>'+
+          botonesComanda+
         '</div>'+
         '<button class="btn btn-ghost btn-block" style="margin-top:14px" data-action="ronda-detalle-cerrar">Cerrar</button>'+
       '</div>'+
@@ -2033,6 +2050,14 @@ function adminProductos(){
       '<button class="btn btn-ember btn-sm" data-action="producto-crear-abrir">+ Nuevo producto</button></div>'+
     '<div class="filtro-row"><input class="search-box" placeholder="Buscar por nombre..." id="productos-busqueda-input" value="'+esc(a.productosBusqueda||'')+'" oninput="window.__filtrarProductos(this.value)">'+
       '<span class="mut" style="margin-left:auto; font-size:12px;">La foto es la que ven los meseros en el menú. JPG, PNG o WebP.</span></div>'+
+    '<div class="estaciones-row"><b>Comanda de cada categoría:</b>'+
+      state.categorias.map(function(c){
+        const est=c.estacion==='bar'?'bar':'cocina';
+        return '<label>'+esc(c.nombre)+' <select data-estacion-categoria="'+c.id+'">'+
+          ORDEN_ESTACIONES.map(function(e){ return '<option value="'+e+'"'+(e===est?' selected':'')+'>'+ESTACIONES[e].icono+' '+ESTACIONES[e].nombre+'</option>'; }).join('')+
+        '</select></label>';
+      }).join('')+
+    '</div>'+
     '<table class="data-table"><thead><tr><th>Foto</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Estado</th><th></th></tr></thead><tbody>'+rows+'</tbody></table>'
   );
 }
@@ -2221,6 +2246,43 @@ function modalComprobante(){
       '</div>'+
     '</div>'
   );
+}
+
+/* ---------- comandas separadas: cocina y bar ----------
+   Cada categoría tiene su estación (categorias.estacion). Los ítems de una
+   ronda se reparten según la categoría de su producto; si no se encuentra,
+   van a cocina. */
+const ESTACIONES={
+  cocina:{ icono:'🍳', nombre:'Cocina', titulo:'COMANDA COCINA' },
+  bar:{ icono:'🍹', nombre:'Bar', titulo:'COMANDA BAR · BEBIDAS Y LICORES' },
+};
+const ORDEN_ESTACIONES=['cocina','bar'];
+function estacionDeCategoria(idCategoria){
+  const c=state.categorias.find(function(x){return x.id===idCategoria;});
+  return c && c.estacion==='bar' ? 'bar' : 'cocina';
+}
+function estacionDeItem(it){
+  const p=getProducto(state,it.idProducto);
+  return estacionDeCategoria(p?p.idCategoria:null);
+}
+function itemsPorEstacion(items){
+  const grupos={cocina:[], bar:[]};
+  items.forEach(function(it){ grupos[estacionDeItem(it)].push(it); });
+  return grupos;
+}
+function comandaHtml(pedido,ronda,estacion,items){
+  const mesa=getMesa(state,pedido.idMesa); const mesero=getMesero(state,ronda.idMesero);
+  const lineas=items.map(function(it){ return '<div style="padding:2px 0;">'+it.cantidad+'x '+esc(it.nombre)+(it.observacion?' — '+esc(it.observacion):'')+'</div>'; }).join('');
+  const encabezado=cpTabla(cpRow(pedido.id+' · R'+ronda.numero, horaCorta(ronda.enviadoEn)) + cpRow('Mesa '+(mesa?mesa.numero:''), esc(mesero?mesero.nombre:'')));
+  return '<div class="comprobante-paper" data-estacion="'+estacion+'"><div class="cp-center"><b>'+ESTACIONES[estacion].titulo+'</b></div><hr>'+encabezado+'<hr>'+lineas+'</div>';
+}
+// estacion: 'cocina', 'bar' o null (todas las que tengan ítems, una tras otra
+// con salto de página para que la impresora corte entre comandas)
+function comandasDeRonda(pedido,ronda,estacion){
+  const grupos=itemsPorEstacion(ronda.items);
+  return ORDEN_ESTACIONES.filter(function(e){ return (!estacion || e===estacion) && grupos[e].length>0; })
+    .map(function(e){ return comandaHtml(pedido,ronda,e,grupos[e]); })
+    .join('<div class="comanda-corte"></div>');
 }
 
 function imprimir(html){
@@ -2452,11 +2514,11 @@ async function manejarAccion(actionEl){
       break;
     }
     case 'comanda-imprimir': {
-      const p=arg.split(','); const pedido=getPedido(state,p[0]); const ronda=pedido.rondas.find(function(r){return r.id===p[1];});
-      const mesa=getMesa(state,pedido.idMesa); const mesero=getMesero(state,ronda.idMesero);
-      const items=ronda.items.map(function(it){ return '<div style="padding:2px 0;">'+it.cantidad+'x '+esc(it.nombre)+(it.observacion?' — '+esc(it.observacion):'')+'</div>'; }).join('');
-      const encabezadoComanda=cpTabla(cpRow(pedido.id+' · R'+ronda.numero, horaCorta(ronda.enviadoEn)) + cpRow('Mesa '+mesa.numero, esc(mesero.nombre)));
-      imprimir('<div class="comprobante-paper"><div class="cp-center"><b>COMANDA COCINA</b></div><hr>'+encabezadoComanda+'<hr>'+items+'</div>');
+      // arg: pedido,ronda[,estacion] — sin estación imprime cocina y bar por separado
+      const p=arg.split(','); const pedido=getPedido(state,p[0]); const ronda=pedido&&pedido.rondas.find(function(r){return r.id===p[1];});
+      if(!ronda) break;
+      const html=comandasDeRonda(pedido, ronda, ESTACIONES[p[2]] ? p[2] : null);
+      if(html) imprimir(html);
       break;
     }
 
@@ -2721,6 +2783,20 @@ document.addEventListener('input', function(e){
   renderMesero();
   const el=document.getElementById('menu-buscar-input');
   if(el){ el.focus(); try{ el.setSelectionRange(el.value.length, el.value.length); }catch(err){} }
+});
+
+/* cambiar a qué comanda (cocina o bar) va una categoría */
+document.addEventListener('change', function(e){
+  const sel=e.target;
+  if(!sel || !sel.getAttribute || !sel.hasAttribute('data-estacion-categoria')) return;
+  const idCategoria=sel.getAttribute('data-estacion-categoria');
+  const estacion=sel.value==='bar'?'bar':'cocina';
+  clientes.admin.from('categorias').update({estacion:estacion}).eq('id',idCategoria).select('id').then(async function(r){
+    if(r.error || !r.data || !r.data.length) pushToast('⚠️ No se pudo guardar','Revisa tu conexión e intenta de nuevo.');
+    else pushToast(ESTACIONES[estacion].icono+' Guardado', 'Esa categoría ahora va a la comanda de '+ESTACIONES[estacion].nombre.toLowerCase()+'.');
+    await syncFromSupabase();
+    render();
+  });
 });
 
 /* elegir foto de un producto (panel de caja) */
